@@ -1,0 +1,91 @@
+torch-butterfly
+Copyright (c) 2019-2026 the torch-butterfly authors and contributors.
+
+This product includes software developed at Stanford HazyResearch.
+
+This project is a consolidation of three upstream repositories. Please cite
+the corresponding papers when using code from the relevant subpackage.
+
+=============================================================================
+Core `torch_butterfly` package (butterfly matrices)
+=============================================================================
+
+Original upstream: https://github.com/HazyResearch/learning-circuits
+Also: https://github.com/HazyResearch/butterfly
+
+    @inproceedings{dao2019learning,
+      title={Learning Fast Algorithms for Linear Transforms Using Butterfly Factorizations},
+      author={Dao, Tri and Gu, Albert and Eichhorn, Matthew and Rudra, Atri and R{\'e}, Christopher},
+      booktitle={International Conference on Machine Learning},
+      year={2019}
+    }
+
+    @inproceedings{dao2020kaleidoscope,
+      title={Kaleidoscope: An Efficient, Learnable Representation For All Structured Linear Maps},
+      author={Dao, Tri and Sohoni, Nimit and Gu, Albert and Eichhorn, Matthew and Blber, Amit and Rudra, Atri and R{\'e}, Christopher},
+      booktitle={International Conference on Learning Representations},
+      year={2020}
+    }
+
+=============================================================================
+`torch_butterfly.structured` subpackage (low displacement rank)
+=============================================================================
+
+Ported from https://github.com/HazyResearch/structured-nets
+Specifically: pytorch/structure/ (PyTorch side only).
+
+    @inproceedings{thomas2018learning,
+      title={Learning Compressed Transforms with Low Displacement Rank},
+      author={Thomas, Anna T. and Gu, Albert and Dao, Tri and Rudra, Atri and R{\'e}, Christopher},
+      booktitle={Advances in Neural Information Processing Systems},
+      year={2018}
+    }
+
+Hadamard CUDA kernel adapted from the NVIDIA CUDA Samples:
+    https://docs.nvidia.com/cuda/cuda-samples/index.html
+(see csrc/hadamard/hadamard_cuda_kernel.cu for the included copyright notice).
+
+=============================================================================
+`torch_butterfly.monarch` subpackage (Monarch primitives)
+=============================================================================
+
+Ported from https://github.com/HazyResearch/m2
+Specifically: bert/src/mm/, bert/src/ops/, and csrc/flashmm/.
+Only the structured-matrix primitives are retained; BERT-specific training
+code, fused dense/dropout/flash-attention, the GLUE harness, embedding
+models, and the end-to-end Monarch Mixer sequence mixer are out of scope.
+
+    @inproceedings{dao2022monarch,
+      title={Monarch: Expressive Structured Matrices for Efficient and Accurate Training},
+      author={Dao, Tri and Chen, Beidi and Sohoni, Nimit and Desai, Arjun and Poli, Michael and Grogan, Jessica and Liu, Alexander and Rao, Aniruddh and Rudra, Atri and R{\'e}, Christopher},
+      booktitle={International Conference on Machine Learning},
+      year={2022}
+    }
+
+    @inproceedings{fu2023monarch,
+      title={Monarch Mixer: A Simple Sub-Quadratic GEMM-Based Architecture},
+      author={Fu, Daniel Y. and Arora, Simran and Grogan, Jessica and Johnson, Isys and Eyuboglu, Sabri and Thomas, Armin W. and Spector, Benjamin and Poli, Michael and Rudra, Atri and R{\'e}, Christopher},
+      booktitle={Advances in Neural Information Processing Systems},
+      year={2023}
+    }
+
+The Hyena filter implementation is adapted from:
+    https://github.com/HazyResearch/safari/blob/main/src/models/sequence/hyena.py
+
+The flashmm CUDA extension depends on NVIDIA MathDx (cuFFTDx / cuBLASDx),
+which is subject to NVIDIA's EULA and is *not* distributed with this
+repository. Users must obtain MathDx 22.02 separately and drop the headers
+under csrc/flashmm/mathdx/22.02/include/ before building with
+TORCH_BUTTERFLY_BUILD_FLASHMM=1.
+
+=============================================================================
+Third-party code bundled in csrc/flashmm/
+=============================================================================
+
+csrc/flashmm/map.h: variadic-macro MAP helpers from
+    https://github.com/swansontec/map-macro
+    Copyright (c) 2012 William Swanson -- MIT-style license (see file header).
+
+csrc/flashmm/static_switch.h: BOOL_SWITCH helper inspired by
+    https://github.com/NVIDIA/DALI and
+    https://github.com/pytorch/pytorch

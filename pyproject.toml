@@ -4,21 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torch-butterfly"
-version = "0.1.0"
-description = "Butterfly matrix multiplication in PyTorch"
+version = "0.2.0"
+description = "Butterfly matrices, low-displacement-rank layers, and Monarch primitives in PyTorch"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 authors = [
     { name = "Tri Dao", email = "trid@stanford.edu" },
 ]
-keywords = ["pytorch", "butterfly", "fft", "structured-matrices", "kaleidoscope"]
+keywords = [
+    "pytorch",
+    "butterfly",
+    "fft",
+    "structured-matrices",
+    "kaleidoscope",
+    "low-displacement-rank",
+    "monarch",
+]
 dependencies = [
     "torch>=2.0",
     "numpy",
+    "scipy",
+    "einops",
+    "opt_einsum",
 ]
 
 [project.optional-dependencies]
+cupy = ["cupy-cuda12x"]
 dev = [
     "pytest",
     "flake8",
