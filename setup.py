@@ -33,11 +33,11 @@ def _base_compile_args(with_cuda):
     return extra
 
 
-def get_butterfly_extensions(with_cuda):
-    """Core torch.ops-style extensions (existing torch-butterfly behavior).
+def get_torch_ops_extensions(with_cuda):
+    """Core torch.ops-style extensions (butterfly factor ops + CUDA version probe).
 
-    These are auto-discovered from csrc/*.cpp; each .cpp may optionally have
-    matching csrc/cpu/<name>_cpu.cpp and csrc/cuda/<name>_cuda.cu files.
+    Auto-discovered from csrc/*.cpp; each .cpp may optionally have matching
+    csrc/cpu/<name>_cpu.cpp and csrc/cuda/<name>_cuda.cu files.
     """
     Extension = CUDAExtension if with_cuda else CppExtension
     define_macros = [("WITH_CUDA", None)] if with_cuda else []
@@ -56,7 +56,7 @@ def get_butterfly_extensions(with_cuda):
             sources.append(str(cuda_path))
         extensions.append(
             Extension(
-                f"torch_butterfly._{name}",
+                f"torch_structured._{name}",
                 sources,
                 include_dirs=[str(extensions_dir)],
                 define_macros=define_macros,
@@ -69,12 +69,12 @@ def get_butterfly_extensions(with_cuda):
 def get_pybind_extensions(with_cuda):
     """pybind11-style CUDA extensions ported from structured-nets and m2.
 
-    These are loaded via `from torch_butterfly import _hadamard_cuda`, etc.,
-    NOT through torch.ops. They are CUDA-only.
+    Loaded via `from torch_structured import _hadamard_cuda`, etc. (not
+    through torch.ops). CUDA-only.
 
-    - torch_butterfly._hadamard_cuda  (structured-nets hadamard_cuda)
-    - torch_butterfly._diag_mult_cuda (structured-nets diag_mult_cuda)
-    - torch_butterfly._flashmm        (m2 csrc/flashmm; opt-in via env var)
+    - torch_structured._hadamard_cuda  (from structured-nets hadamard_cuda)
+    - torch_structured._diag_mult_cuda (from structured-nets diag_mult_cuda)
+    - torch_structured._flashmm        (from m2 csrc/flashmm; opt-in via env var)
     """
     if not with_cuda:
         return []
@@ -86,7 +86,7 @@ def get_pybind_extensions(with_cuda):
     if hadamard_dir.exists():
         extensions.append(
             CUDAExtension(
-                name="torch_butterfly._hadamard_cuda",
+                name="torch_structured._hadamard_cuda",
                 sources=[
                     str(hadamard_dir / "hadamard_cuda.cpp"),
                     str(hadamard_dir / "hadamard_cuda_kernel.cu"),
@@ -99,7 +99,7 @@ def get_pybind_extensions(with_cuda):
     if diag_mult_dir.exists():
         extensions.append(
             CUDAExtension(
-                name="torch_butterfly._diag_mult_cuda",
+                name="torch_structured._diag_mult_cuda",
                 sources=[
                     str(diag_mult_dir / "diag_mult_cuda.cpp"),
                     str(diag_mult_dir / "diag_mult_cuda_kernel.cu"),
@@ -110,7 +110,7 @@ def get_pybind_extensions(with_cuda):
 
     # flashmm is opt-in: requires MathDx 22.02 headers + two large kernel
     # sources that are not vendored in-tree (see csrc/flashmm/README.md).
-    if os.getenv("TORCH_BUTTERFLY_BUILD_FLASHMM", "0") == "1":
+    if os.getenv("TORCH_STRUCTURED_BUILD_FLASHMM", "0") == "1":
         flashmm_dir = Path("csrc/flashmm")
         mathdx_include = flashmm_dir / "mathdx" / "22.02" / "include"
         mm_block_src = flashmm_dir / "mm_block_fwd_cuda.cu"
@@ -120,7 +120,7 @@ def get_pybind_extensions(with_cuda):
         if missing:
             names = ", ".join(str(p) for p in missing)
             raise FileNotFoundError(
-                f"TORCH_BUTTERFLY_BUILD_FLASHMM=1 but the following kernel "
+                f"TORCH_STRUCTURED_BUILD_FLASHMM=1 but the following kernel "
                 f"sources are missing: {names}. Run "
                 f"`python csrc/flashmm/fetch_kernel_sources.py` first."
             )
@@ -134,7 +134,7 @@ def get_pybind_extensions(with_cuda):
         ]
         extensions.append(
             CUDAExtension(
-                name="torch_butterfly._flashmm",
+                name="torch_structured._flashmm",
                 sources=[
                     str(flashmm_dir / "flash_mm.cpp"),
                     str(mm_block_src),
@@ -156,7 +156,7 @@ def get_extensions():
         return []
     with_cuda = _with_cuda()
     return [
-        *get_butterfly_extensions(with_cuda),
+        *get_torch_ops_extensions(with_cuda),
         *get_pybind_extensions(with_cuda),
     ]
 

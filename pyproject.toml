@@ -3,9 +3,9 @@ requires = ["setuptools>=64", "torch>=2.0", "ninja", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "torch-butterfly"
-version = "0.2.0"
-description = "Butterfly matrices, low-displacement-rank layers, and Monarch primitives in PyTorch"
+name = "torch-structured"
+version = "0.3.0"
+description = "Butterfly, low-displacement-rank, and Monarch structured-matrix primitives in PyTorch"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
@@ -43,4 +43,4 @@ test = [
 Homepage = "https://github.com/hazyresearch/learning-circuits"
 
 [tool.setuptools.packages.find]
-include = ["torch_butterfly*"]
+include = ["torch_structured*"]
