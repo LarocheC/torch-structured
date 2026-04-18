@@ -1,88 +1,113 @@
-# torch_butterfly
+# torch-butterfly
 
-PyTorch implementation of butterfly matrices for efficient structured linear transforms, from the papers [Learning Fast Algorithms for Linear Transforms Using Butterfly Factorizations](https://arxiv.org/abs/1903.05895) and [Kaleidoscope: An Efficient, Learnable Representation For All Structured Linear Maps](https://openreview.net/forum?id=BkgrBgSYDS).
+Consolidated PyTorch library of structured-matrix primitives:
 
-## What is this?
+- **`torch_butterfly`** (core) — butterfly matrices for exact fast linear transforms (FFT, iFFT, DCT, DST, Hadamard, circulant, Toeplitz) as learnable `nn.Module` drop-in replacements for `nn.Linear`.
+- **`torch_butterfly.structured`** — low-displacement-rank layers ported from [structured-nets](https://github.com/HazyResearch/structured-nets): Toeplitz-like, Hankel, Vandermonde, Fastfood, Circulant, LDR subdiagonal / tridiagonal, Krylov utilities.
+- **`torch_butterfly.monarch`** — Monarch / block-diagonal-butterfly primitives ported from [m2](https://github.com/HazyResearch/m2): block-diagonal and block-diagonal-butterfly multiplies, structured linear layers, butterfly-factor helper, Hyena implicit long filter, and an opt-in fused flashmm CUDA kernel.
 
-Butterfly matrices are a class of structured matrices that can represent many fast linear transforms -- FFT, inverse FFT, discrete cosine transform (DCT), discrete sine transform (DST), Hadamard transform, circulant and Toeplitz matrix multiplications, and convolutions -- using O(N log N) parameters instead of O(N^2). This library provides GPU-accelerated butterfly matrix multiplication via custom C++/CUDA kernels, wrapped in familiar `torch.nn.Module` interfaces that serve as drop-in replacements for `nn.Linear`.
+See the `NOTICE` file for upstream attributions and citations.
 
 ## Requirements
 
 - Python >= 3.10
 - PyTorch >= 2.0
-- numpy
+- NumPy, SciPy, einops, opt_einsum
 - A C++ compiler supporting C++14 (for building extensions)
 - CUDA toolkit (optional, for GPU acceleration)
 
 ## Installation
 
-**With uv (recommended):**
-
 ```bash
-uv pip install .
-```
-
-**With pip:**
-
-```bash
-pip install .
-```
-
-**Development install:**
-
-```bash
-uv pip install -e ".[dev]"
+uv pip install .            # or: pip install .
+uv pip install -e ".[dev]"  # development install
 ```
 
 ### CUDA support
 
-CUDA extensions are compiled automatically when a CUDA toolkit is detected. To override auto-detection:
+CUDA extensions are compiled automatically when a CUDA toolkit is detected. Override with env vars:
 
 ```bash
-FORCE_CUDA=1 uv pip install .   # Force CUDA compilation
-FORCE_CPU=1 uv pip install .    # Force CPU-only build
+FORCE_CUDA=1 uv pip install .   # force CUDA compilation
+FORCE_CPU=1 uv pip install .    # force CPU-only build
 ```
 
-You can also set `TORCH_CUDA_ARCH_LIST` to target specific GPU architectures (e.g., `"7.0 8.0 9.0+PTX"`).
+`TORCH_CUDA_ARCH_LIST` targets specific GPU architectures (default: `"7.0 8.0 9.0+PTX"`).
 
-## Usage
+Built extensions (CUDA builds):
+- `torch_butterfly._butterfly`, `torch_butterfly._version` — core butterfly ops (torch.ops-style).
+- `torch_butterfly._hadamard_cuda` — fast Walsh-Hadamard transform (pybind module).
+- `torch_butterfly._diag_mult_cuda` — subdiagonal cycle-multiply helper (pybind module).
 
-The `Butterfly` module is a drop-in replacement for `nn.Linear`:
+### Optional: flashmm extension
+
+The Monarch Mixer fused `flashmm` kernel is opt-in because it requires NVIDIA MathDx 22.02 and extra kernel sources not vendored in this repo. See [`csrc/flashmm/README.md`](csrc/flashmm/README.md) for the full procedure:
+
+```bash
+python csrc/flashmm/fetch_kernel_sources.py
+TORCH_BUTTERFLY_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
+```
+
+## Quickstart
+
+### Core butterfly
 
 ```python
+import torch
 from torch_butterfly import Butterfly
+from torch_butterfly.special import fft, hadamard
 
 layer = Butterfly(in_size=1024, out_size=1024)
+fft_layer = fft(1024)
+hadamard_layer = hadamard(1024)
 ```
 
-The file `torch_butterfly/special.py` contains factory functions that construct butterfly matrices performing exact well-known transforms:
+### Structured (LDR) layers
 
 ```python
-from torch_butterfly.special import fft, ifft, dct, dst, hadamard, circulant
+from torch_butterfly.structured.layers import ToeplitzLike, LDRSubdiagonal
+from torch_butterfly.structured.hadamard import hadamard_transform_torch
+
+toeplitz = ToeplitzLike(layer_size=256, r=2)
+ldr_sd = LDRSubdiagonal(layer_size=256, r=2)
+y = hadamard_transform_torch(torch.randn(4, 128))
 ```
 
-See `tests/test_special.py` for examples verifying that these butterfly matrices exactly perform the corresponding operations.
+### Monarch primitives
+
+```python
+import torch
+from torch_butterfly.monarch.blockdiag_linear import BlockdiagLinear
+from torch_butterfly.monarch.blockdiag_butterfly_multiply import (
+    blockdiag_butterfly_multiply,
+)
+
+linear = BlockdiagLinear(in_features=512, out_features=512, nblocks=4)
+# low-level multiply:
+x = torch.randn(8, 64)
+w1 = torch.randn(8, 8, 8)
+w2 = torch.randn(8, 8, 8)
+out = blockdiag_butterfly_multiply(x, w1, w2)
+```
+
+## Tests
+
+```bash
+pytest tests/
+```
+
+CUDA-only and `_flashmm`-only tests are automatically skipped when the corresponding extension is not built.
 
 ## Citation
 
-If you use this codebase, please cite:
+See `NOTICE` for full upstream attributions and BibTeX entries for:
 
-```bibtex
-@inproceedings{dao2019learning,
-  title={Learning Fast Algorithms for Linear Transforms Using Butterfly Factorizations},
-  author={Dao, Tri and Gu, Albert and Eichhorn, Matthew and Rudra, Atri and R{\'e}, Christopher},
-  booktitle={International Conference on Machine Learning},
-  year={2019}
-}
-
-@inproceedings{dao2020kaleidoscope,
-  title={Kaleidoscope: An Efficient, Learnable Representation For All Structured Linear Maps},
-  author={Dao, Tri and Sohoni, Nimit and Gu, Albert and Eichhorn, Matthew and Blber, Amit and Rudra, Atri and R{\'e}, Christopher},
-  booktitle={International Conference on Learning Representations},
-  year={2020}
-}
-```
+- Dao, Gu, Eichhorn, Rudra, Ré, *Learning Fast Algorithms for Linear Transforms Using Butterfly Factorizations*, ICML 2019
+- Dao et al., *Kaleidoscope*, ICLR 2020
+- Thomas, Gu, Dao, Rudra, Ré, *Learning Compressed Transforms with Low Displacement Rank*, NeurIPS 2018
+- Dao et al., *Monarch: Expressive Structured Matrices for Efficient and Accurate Training*, ICML 2022
+- Fu, Arora, Grogan et al., *Monarch Mixer: A Simple Sub-Quadratic GEMM-Based Architecture*, NeurIPS 2023
 
 ## License
 
-Apache-2.0
+Apache-2.0 (see `LICENSE`).
