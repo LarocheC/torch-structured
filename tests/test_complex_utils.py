@@ -5,7 +5,7 @@ import unittest
 import torch
 
 import torch_structured
-from torch_structured.complex_utils import complex_matmul, index_last_dim
+from torch_structured.butterfly.complex_utils import complex_matmul, index_last_dim
 
 
 class ButterflyComplexUtilsTest(unittest.TestCase):

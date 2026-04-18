@@ -10,9 +10,9 @@ import torch.fft
 
 import torch_structured
 from torch_structured import Butterfly
-from torch_structured.complex_utils import complex_matmul
-from torch_structured.combine import TensorProduct
-from torch_structured.complex_utils import real2complex
+from torch_structured.butterfly.complex_utils import complex_matmul
+from torch_structured.butterfly.combine import TensorProduct
+from torch_structured.butterfly.complex_utils import real2complex
 
 
 class ButterflyTest(unittest.TestCase):
@@ -48,7 +48,7 @@ class ButterflyTest(unittest.TestCase):
         batch_size = 10
         n = 16
         input = torch.randn(batch_size, n, dtype=torch.complex64)
-        br = torch_structured.permutation.bitreversal_permutation(n, pytorch_format=True)
+        br = torch_structured.butterfly.permutation.bitreversal_permutation(n, pytorch_format=True)
         for increasing_stride in [True, False]:
             for nblocks in [1, 2, 3]:
                 with torch.no_grad():
@@ -115,9 +115,9 @@ class ButterflyTest(unittest.TestCase):
         for complex in [False, True]:
             if complex:
                 model = nn.Sequential(
-                    torch_structured.complex_utils.Real2Complex(),
+                    torch_structured.butterfly.complex_utils.Real2Complex(),
                     Butterfly(size, size, bias=False, complex=complex),
-                    torch_structured.complex_utils.Complex2Real(),
+                    torch_structured.butterfly.complex_utils.Complex2Real(),
                 )
             else:
                 model = Butterfly(size, size, bias=False, complex=complex)
@@ -278,7 +278,7 @@ class ButterflyTest(unittest.TestCase):
                for _ in range(out_channels * in_channels)]
         b2s = [Butterfly(n2, n2, bias=False, complex=True)
                for _ in range(out_channels * in_channels)]
-        b_tp = [torch_structured.combine.TensorProduct(b1, b2) for b1, b2 in zip(b1s, b2s)]
+        b_tp = [torch_structured.butterfly.combine.TensorProduct(b1, b2) for b1, b2 in zip(b1s, b2s)]
         with torch.no_grad():
             outputs = []
             for o in range(out_channels):

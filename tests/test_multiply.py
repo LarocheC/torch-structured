@@ -37,7 +37,7 @@ class ButterflyTest(unittest.TestCase):
                         twiddle = torch.randn((nstacks, nblocks, log_n, n // 2, 2, 2), dtype=dtype, requires_grad=True, device=device) * scaling
                         input = torch.randn((batch_size, nstacks, n), dtype=dtype, requires_grad=True, device=twiddle.device)
                         output = torch_structured.butterfly_multiply(twiddle, input, increasing_stride)
-                        output_torch = torch_structured.multiply.butterfly_multiply_torch(twiddle, input, increasing_stride)
+                        output_torch = torch_structured.butterfly.multiply.butterfly_multiply_torch(twiddle, input, increasing_stride)
                         self.assertTrue(torch.allclose(output, output_torch, rtol=self.rtol, atol=self.atol),
                                         ((output - output_torch).abs().max().item(), device, complex, increasing_stride))
                         grad = torch.randn_like(output_torch)
@@ -75,7 +75,7 @@ class ButterflyTest(unittest.TestCase):
                                 twiddle = torch.randn((nstacks, nblocks, log_n, n // 2, 2, 2), dtype=dtype, requires_grad=True, device=device) * scaling
                                 input = torch.randn((batch_size, nstacks, input_size), dtype=dtype, requires_grad=True, device=twiddle.device)
                                 output = torch_structured.butterfly_multiply(twiddle, input, increasing_stride, output_size)
-                                output_torch = torch_structured.multiply.butterfly_multiply_torch(twiddle, input, increasing_stride, output_size)
+                                output_torch = torch_structured.butterfly.multiply.butterfly_multiply_torch(twiddle, input, increasing_stride, output_size)
                                 self.assertTrue(torch.allclose(output, output_torch, rtol=self.rtol, atol=self.atol),
                                                 ((output - output_torch).abs().max().item(), device, complex, increasing_stride))
                                 grad = torch.randn_like(output_torch)

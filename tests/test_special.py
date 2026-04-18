@@ -28,7 +28,7 @@ class ButterflySpecialTest(unittest.TestCase):
         for normalized in [False, True]:
             out_torch = torch.fft.fft(input, norm=None if not normalized else 'ortho')
             for br_first in [True, False]:
-                b = torch_structured.special.fft(n, normalized=normalized, br_first=br_first)
+                b = torch_structured.butterfly.special.fft(n, normalized=normalized, br_first=br_first)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -39,7 +39,7 @@ class ButterflySpecialTest(unittest.TestCase):
         normalized = True
         out_torch = torch.fft.fft(input, norm=None if not normalized else 'ortho')
         for br_first in [True, False]:
-            b = torch_structured.special.fft_unitary(n, br_first=br_first)
+            b = torch_structured.butterfly.special.fft_unitary(n, br_first=br_first)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -50,7 +50,7 @@ class ButterflySpecialTest(unittest.TestCase):
         for normalized in [False, True]:
             out_torch = torch.fft.ifft(input, norm=None if not normalized else 'ortho')
             for br_first in [True, False]:
-                b = torch_structured.special.ifft(n, normalized=normalized, br_first=br_first)
+                b = torch_structured.butterfly.special.ifft(n, normalized=normalized, br_first=br_first)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -61,7 +61,7 @@ class ButterflySpecialTest(unittest.TestCase):
         normalized = True
         out_torch = torch.fft.ifft(input, norm=None if not normalized else 'ortho')
         for br_first in [True, False]:
-            b = torch_structured.special.ifft_unitary(n, br_first=br_first)
+            b = torch_structured.butterfly.special.ifft_unitary(n, br_first=br_first)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -73,7 +73,7 @@ class ButterflySpecialTest(unittest.TestCase):
             for normalized in [False, True]:
                 out_sp = torch.tensor(scipy.fft.dct(input.numpy(), type=type,
                                                     norm=None if not normalized else 'ortho'))
-                b = torch_structured.special.dct(n, type=type, normalized=normalized)
+                b = torch_structured.butterfly.special.dct(n, type=type, normalized=normalized)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_sp, self.rtol, self.atol))
 
@@ -85,7 +85,7 @@ class ButterflySpecialTest(unittest.TestCase):
             for normalized in [False, True]:
                 out_sp = torch.tensor(scipy.fft.dst(input.numpy(), type=type,
                                                     norm=None if not normalized else 'ortho'))
-                b = torch_structured.special.dst(n, type=type, normalized=normalized)
+                b = torch_structured.butterfly.special.dst(n, type=type, normalized=normalized)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_sp, self.rtol, self.atol))
 
@@ -109,7 +109,7 @@ class ButterflySpecialTest(unittest.TestCase):
                 out_fft = torch.fft.ifft(prod_f)
                 self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
             for separate_diagonal in [True, False]:
-                b = torch_structured.special.circulant(col, transposed=False,
+                b = torch_structured.butterfly.special.circulant(col, transposed=False,
                                                       separate_diagonal=separate_diagonal)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -127,7 +127,7 @@ class ButterflySpecialTest(unittest.TestCase):
                                               * row_f_reversed), dtype=dtype)
             self.assertTrue(torch.allclose(out_torch, out_np, self.rtol, self.atol))
             for separate_diagonal in [True, False]:
-                b = torch_structured.special.circulant(row, transposed=True,
+                b = torch_structured.butterfly.special.circulant(row, transposed=True,
                                                       separate_diagonal=separate_diagonal)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -143,7 +143,7 @@ class ButterflySpecialTest(unittest.TestCase):
                 input = torch.randn(batch_size, m, dtype=dtype)
                 out_torch = torch.tensor(input.detach().numpy() @ T.T)
                 for separate_diagonal in [True, False]:
-                    b = torch_structured.special.toeplitz(col, row,
+                    b = torch_structured.butterfly.special.toeplitz(col, row,
                                                         separate_diagonal=separate_diagonal)
                     out = b(input)
                     self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -155,7 +155,7 @@ class ButterflySpecialTest(unittest.TestCase):
         input = torch.randn(batch_size, n)
         out_torch = F.linear(input, H) / math.sqrt(n)
         for increasing_stride in [True, False]:
-            b = torch_structured.special.hadamard(n, normalized=True,
+            b = torch_structured.butterfly.special.hadamard(n, normalized=True,
                                                  increasing_stride=increasing_stride)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -172,7 +172,7 @@ class ButterflySpecialTest(unittest.TestCase):
                 out_torch = F.linear(out_torch * diagonal, H)
             for increasing_stride in [True, False]:
                 for separate_diagonal in [True, False]:
-                    b = torch_structured.special.hadamard_diagonal(
+                    b = torch_structured.butterfly.special.hadamard_diagonal(
                         diagonals, normalized=True, increasing_stride=increasing_stride,
                         separate_diagonal=separate_diagonal
                     )
@@ -197,7 +197,7 @@ class ButterflySpecialTest(unittest.TestCase):
                 out_fft = torch.fft.irfft(prod_f, n=n)
                 self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
                 for separate_diagonal in [True, False]:
-                    b = torch_structured.special.conv1d_circular_singlechannel(n, weight,
+                    b = torch_structured.butterfly.special.conv1d_circular_singlechannel(n, weight,
                                                                               separate_diagonal)
                     out = b(input)
                     self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -221,7 +221,7 @@ class ButterflySpecialTest(unittest.TestCase):
                 prod_f = (input_f.unsqueeze(1) * col_f).sum(dim=2)
                 out_fft = torch.fft.irfft(prod_f, n=n)
                 self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
-                b = torch_structured.special.conv1d_circular_multichannel(n, weight)
+                b = torch_structured.butterfly.special.conv1d_circular_multichannel(n, weight)
                 out = b(input)
                 self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -239,7 +239,7 @@ class ButterflySpecialTest(unittest.TestCase):
             self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
             for br_first in [True, False]:
                 for flatten in [False, True]:
-                    b = torch_structured.special.fft2d(n1, n2, normalized=normalized,
+                    b = torch_structured.butterfly.special.fft2d(n1, n2, normalized=normalized,
                                                       br_first=br_first, flatten=flatten)
                     out = b(input)
                     self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -252,7 +252,7 @@ class ButterflySpecialTest(unittest.TestCase):
         normalized = True
         out_torch = torch.fft.fftn(input, dim=(-1, -2), norm=None if not normalized else 'ortho')
         for br_first in [True, False]:
-            b = torch_structured.special.fft2d_unitary(n1, n2, br_first=br_first)
+            b = torch_structured.butterfly.special.fft2d_unitary(n1, n2, br_first=br_first)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -270,7 +270,7 @@ class ButterflySpecialTest(unittest.TestCase):
             self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
             for br_first in [True, False]:
                 for flatten in [False, True]:
-                    b = torch_structured.special.ifft2d(n1, n2, normalized=normalized,
+                    b = torch_structured.butterfly.special.ifft2d(n1, n2, normalized=normalized,
                                                        br_first=br_first, flatten=flatten)
                     out = b(input)
                     self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -283,7 +283,7 @@ class ButterflySpecialTest(unittest.TestCase):
         normalized = True
         out_torch = torch.fft.ifftn(input, dim=(-1, -2), norm=None if not normalized else 'ortho')
         for br_first in [True, False]:
-            b = torch_structured.special.ifft2d_unitary(n1, n2, br_first=br_first)
+            b = torch_structured.butterfly.special.ifft2d_unitary(n1, n2, br_first=br_first)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
 
@@ -319,7 +319,7 @@ class ButterflySpecialTest(unittest.TestCase):
                         out_fft = torch.fft.irfftn(prod_f, dim=(-1, -2), s=(n1, n2))
                         self.assertTrue(torch.allclose(out_torch, out_fft, self.rtol, self.atol))
                         for flatten in flatten_cases:
-                            b = torch_structured.special.conv2d_circular_multichannel(
+                            b = torch_structured.butterfly.special.conv2d_circular_multichannel(
                                 n1, n2, weight, flatten=flatten)
                             out = b(input)
                             self.assertTrue(torch.allclose(out, out_torch, self.rtol, self.atol))
@@ -336,7 +336,7 @@ class ButterflySpecialTest(unittest.TestCase):
         out_torch = F.linear(out_torch * diag2, H) * diag3
         for increasing_stride in [True, False]:
             for separate_diagonal in [True, False]:
-                b = torch_structured.special.fastfood(
+                b = torch_structured.butterfly.special.fastfood(
                     diag1, diag2, diag3, permutation, normalized=True,
                     increasing_stride=increasing_stride, separate_diagonal=separate_diagonal
                 )
@@ -351,13 +351,13 @@ class ButterflySpecialTest(unittest.TestCase):
         for separate_diagonal in [True, False]:
             out_sp = torch.tensor(scipy.fft.dct(input.numpy(), norm='ortho')) * diag1
             out_sp = torch.tensor(scipy.fft.idct(out_sp.numpy(), norm='ortho')) * diag2
-            b = torch_structured.special.acdc(diag1, diag2, dct_first=True,
+            b = torch_structured.butterfly.special.acdc(diag1, diag2, dct_first=True,
                                              separate_diagonal=separate_diagonal)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_sp, self.rtol, self.atol))
             out_sp = torch.tensor(scipy.fft.idct(input.numpy(), norm='ortho')) * diag1
             out_sp = torch.tensor(scipy.fft.dct(out_sp.numpy(), norm='ortho')) * diag2
-            b = torch_structured.special.acdc(diag1, diag2, dct_first=False,
+            b = torch_structured.butterfly.special.acdc(diag1, diag2, dct_first=False,
                                              separate_diagonal=separate_diagonal)
             out = b(input)
             self.assertTrue(torch.allclose(out, out_sp, self.rtol, self.atol))
@@ -367,7 +367,7 @@ class ButterflySpecialTest(unittest.TestCase):
         n = 32
         input = torch.randn(batch_size, n)
         out_pywt = torch.tensor(np.hstack(pywt.wavedec(input.numpy(), 'haar')))
-        b = torch_structured.special.wavelet_haar(n)
+        b = torch_structured.butterfly.special.wavelet_haar(n)
         out = b(input)
         self.assertTrue(torch.allclose(out, out_pywt, self.rtol, self.atol))
 

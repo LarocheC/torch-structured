@@ -32,7 +32,7 @@ class ButterflyCombineTest(unittest.TestCase):
                             out = b(input * diagonal) if diag_first else b(input) * diagonal
                             for inplace in [True, False]:
                                 b_copy = copy.deepcopy(b)  # otherwise inplace would modify b
-                                bd = torch_structured.combine.diagonal_butterfly(
+                                bd = torch_structured.butterfly.combine.diagonal_butterfly(
                                     b_copy, diagonal, diag_first, inplace)
                                 out_bd = bd(input)
                                 self.assertTrue(torch.allclose(out_bd, out, self.rtol, self.atol))
@@ -54,7 +54,7 @@ class ButterflyCombineTest(unittest.TestCase):
                 b2 = torch_structured.Butterfly(n, out_size, bias=False, complex=complex,
                                                increasing_stride=inc_stride2)
                 out = b2(b1(input))
-                b = torch_structured.combine.butterfly_product(b1, b2)
+                b = torch_structured.butterfly.combine.butterfly_product(b1, b2)
                 out_prod = b(input)
                 self.assertTrue(torch.allclose(out_prod, out, self.rtol, self.atol))
 
@@ -71,9 +71,9 @@ class ButterflyCombineTest(unittest.TestCase):
                                                increasing_stride=increasing_stride)
                 b2 = torch_structured.Butterfly(n2, n2, bias=False, complex=complex,
                                                increasing_stride=increasing_stride)
-                b_tp = torch_structured.combine.TensorProduct(b1, b2)
+                b_tp = torch_structured.butterfly.combine.TensorProduct(b1, b2)
                 out_tp = b_tp(input)
-                b = torch_structured.combine.butterfly_kronecker(b1, b2)
+                b = torch_structured.butterfly.combine.butterfly_kronecker(b1, b2)
                 out = b(input.reshape(batch_size, n2 * n1)).reshape(batch_size, n2, n1)
                 self.assertTrue(torch.allclose(out, out_tp, self.rtol, self.atol))
 
@@ -88,7 +88,7 @@ class ButterflyCombineTest(unittest.TestCase):
                         b = torch_structured.Butterfly(n, n, bias=False, complex=complex,
                                                       increasing_stride=increasing_stride,
                                                       nblocks=nblocks)
-                        b_new = torch_structured.combine.flip_increasing_stride(b)
+                        b_new = torch_structured.butterfly.combine.flip_increasing_stride(b)
                         self.assertTrue(b_new[1].increasing_stride == (not b.increasing_stride))
                         self.assertTrue(torch.allclose(b_new(input), b(input),
                                                        self.rtol, self.atol))
