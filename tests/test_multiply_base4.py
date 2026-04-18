@@ -7,9 +7,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from torch_butterfly.multiply import butterfly_multiply_torch
-from torch_butterfly.multiply_base4 import butterfly_multiply_base4_torch
-from torch_butterfly.multiply_base4 import twiddle_base2_to_base4
+from torch_structured.multiply import butterfly_multiply_torch
+from torch_structured.multiply_base4 import butterfly_multiply_base4_torch
+from torch_structured.multiply_base4 import twiddle_base2_to_base4
 
 
 class MultiplyBase4Test(unittest.TestCase):

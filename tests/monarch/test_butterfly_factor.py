@@ -1,8 +1,8 @@
-"""Test for torch_butterfly.monarch.butterfly_factor."""
+"""Test for torch_structured.monarch.butterfly_factor."""
 
 import torch
 
-from torch_butterfly.monarch.butterfly_factor import butterfly_factor_to_matrix
+from torch_structured.monarch.butterfly_factor import butterfly_factor_to_matrix
 
 
 def test_butterfly_factor_to_matrix_shape():
