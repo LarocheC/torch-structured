@@ -3,7 +3,7 @@ import torch
 
 use_hadamard_transform_cuda = True
 try:
-    from torch_butterfly import _hadamard_cuda as hadamard_cuda
+    from torch_structured import _hadamard_cuda as hadamard_cuda
 except ImportError:
     use_hadamard_transform_cuda = False
 

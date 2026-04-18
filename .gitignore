@@ -26,7 +26,7 @@ sdist/
 var/
 wheels/
 *.egg-info/
-torch_butterfly.egg-info/
+torch_structured.egg-info/
 .installed.cfg
 *.egg
 MANIFEST

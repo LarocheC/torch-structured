@@ -1,24 +1,24 @@
-"""Smoke test for torch_butterfly.monarch imports and reference paths."""
+"""Smoke test for torch_structured.monarch imports and reference paths."""
 
 import torch
 
-from torch_butterfly.monarch.blockdiag_multiply import (
+from torch_structured.monarch.blockdiag_multiply import (
     blockdiag_multiply_reference,
     blockdiag_weight_to_dense_weight,
 )
 
 
 def test_import_monarch():
-    import torch_butterfly.monarch  # noqa: F401
-    from torch_butterfly.monarch.blockdiag_multiply import blockdiag_multiply  # noqa: F401
-    from torch_butterfly.monarch.blockdiag_butterfly_multiply import (
+    import torch_structured.monarch  # noqa: F401
+    from torch_structured.monarch.blockdiag_multiply import blockdiag_multiply  # noqa: F401
+    from torch_structured.monarch.blockdiag_butterfly_multiply import (
         blockdiag_butterfly_multiply,
         blockdiag_butterfly_multiply_reference,
     )  # noqa: F401
-    from torch_butterfly.monarch.blockdiag_linear import BlockdiagLinear  # noqa: F401
-    from torch_butterfly.monarch.butterfly_factor import butterfly_factor_to_matrix  # noqa: F401
-    from torch_butterfly.monarch.low_rank import low_rank_project  # noqa: F401
-    from torch_butterfly.monarch.structured_linear import StructuredLinear  # noqa: F401
+    from torch_structured.monarch.blockdiag_linear import BlockdiagLinear  # noqa: F401
+    from torch_structured.monarch.butterfly_factor import butterfly_factor_to_matrix  # noqa: F401
+    from torch_structured.monarch.low_rank import low_rank_project  # noqa: F401
+    from torch_structured.monarch.structured_linear import StructuredLinear  # noqa: F401
 
 
 def test_blockdiag_reference_matches_dense():

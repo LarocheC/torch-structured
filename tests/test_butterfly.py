@@ -8,11 +8,11 @@ from torch import nn
 from torch.nn import functional as F
 import torch.fft
 
-import torch_butterfly
-from torch_butterfly import Butterfly
-from torch_butterfly.complex_utils import complex_matmul
-from torch_butterfly.combine import TensorProduct
-from torch_butterfly.complex_utils import real2complex
+import torch_structured
+from torch_structured import Butterfly
+from torch_structured.butterfly.complex_utils import complex_matmul
+from torch_structured.butterfly.combine import TensorProduct
+from torch_structured.butterfly.complex_utils import real2complex
 
 
 class ButterflyTest(unittest.TestCase):
@@ -48,7 +48,7 @@ class ButterflyTest(unittest.TestCase):
         batch_size = 10
         n = 16
         input = torch.randn(batch_size, n, dtype=torch.complex64)
-        br = torch_butterfly.permutation.bitreversal_permutation(n, pytorch_format=True)
+        br = torch_structured.butterfly.permutation.bitreversal_permutation(n, pytorch_format=True)
         for increasing_stride in [True, False]:
             for nblocks in [1, 2, 3]:
                 with torch.no_grad():
@@ -115,9 +115,9 @@ class ButterflyTest(unittest.TestCase):
         for complex in [False, True]:
             if complex:
                 model = nn.Sequential(
-                    torch_butterfly.complex_utils.Real2Complex(),
+                    torch_structured.butterfly.complex_utils.Real2Complex(),
                     Butterfly(size, size, bias=False, complex=complex),
-                    torch_butterfly.complex_utils.Complex2Real(),
+                    torch_structured.butterfly.complex_utils.Complex2Real(),
                 )
             else:
                 model = Butterfly(size, size, bias=False, complex=complex)
@@ -216,7 +216,7 @@ class ButterflyTest(unittest.TestCase):
             for in_size, out_size in [(7, 15), (15, 7)]:
                 for increasing_stride in [True, False]:
                     for nblocks in [1, 2, 3]:
-                        b = torch_butterfly.ButterflyUnitary(in_size, out_size, True,
+                        b = torch_structured.ButterflyUnitary(in_size, out_size, True,
                                                                 increasing_stride, nblocks=nblocks).to(device)
                         dtype = torch.complex64
                         input = torch.randn(batch_size, in_size, dtype=dtype, device=device)
@@ -227,7 +227,7 @@ class ButterflyTest(unittest.TestCase):
         size = 32
         for increasing_stride in [True, False]:
             for nblocks in [1, 2, 3]:
-                b = torch_butterfly.ButterflyUnitary(size, size, False,
+                b = torch_structured.ButterflyUnitary(size, size, False,
                                                      increasing_stride, nblocks=nblocks)
                 eye = torch.eye(size, dtype=torch.complex64)
                 twiddle_matrix_np = b(eye).t().detach().numpy()
@@ -243,7 +243,7 @@ class ButterflyTest(unittest.TestCase):
                     for increasing_stride in [True, False]:
                         for nblocks in [1, 2, 3]:
                             # Test shape
-                            b_bmm = torch_butterfly.ButterflyBmm(in_size, out_size, matrix_batch, True,
+                            b_bmm = torch_structured.ButterflyBmm(in_size, out_size, matrix_batch, True,
                                                              complex, increasing_stride, nblocks=nblocks).to(device)
                             dtype = torch.float32 if not complex else torch.complex64
                             input = torch.randn(batch_size, matrix_batch, in_size, dtype=dtype, device=device)
@@ -278,7 +278,7 @@ class ButterflyTest(unittest.TestCase):
                for _ in range(out_channels * in_channels)]
         b2s = [Butterfly(n2, n2, bias=False, complex=True)
                for _ in range(out_channels * in_channels)]
-        b_tp = [torch_butterfly.combine.TensorProduct(b1, b2) for b1, b2 in zip(b1s, b2s)]
+        b_tp = [torch_structured.butterfly.combine.TensorProduct(b1, b2) for b1, b2 in zip(b1s, b2s)]
         with torch.no_grad():
             outputs = []
             for o in range(out_channels):
@@ -290,10 +290,10 @@ class ButterflyTest(unittest.TestCase):
             out = torch.stack(outputs, dim=1)
         assert out.shape == (batch_size, out_channels, in_channels, n2, n1)
         # Use ButterflyBmm instead
-        b1_bmm = torch_butterfly.ButterflyBmm(n1, n1, matrix_batch=out_channels * in_channels,
+        b1_bmm = torch_structured.ButterflyBmm(n1, n1, matrix_batch=out_channels * in_channels,
                                               bias=False, complex=True,
                                               init=torch.cat([b1.twiddle for b1 in b1s]))
-        b2_bmm = torch_butterfly.ButterflyBmm(n2, n2, matrix_batch=out_channels * in_channels,
+        b2_bmm = torch_structured.ButterflyBmm(n2, n2, matrix_batch=out_channels * in_channels,
                                               bias=False, complex=True,
                                               init=torch.cat([b2.twiddle for b2 in b2s]))
         input_reshaped = input.transpose(1, 2).reshape(batch_size, n2, 1, in_channels, n1)

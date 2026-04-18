@@ -1,8 +1,8 @@
-"""Tests for torch_butterfly.monarch.blockdiag_butterfly_multiply."""
+"""Tests for torch_structured.monarch.blockdiag_butterfly_multiply."""
 
 import torch
 
-from torch_butterfly.monarch.blockdiag_butterfly_multiply import (
+from torch_structured.monarch.blockdiag_butterfly_multiply import (
     blockdiag_butterfly_multiply_reference,
 )
 

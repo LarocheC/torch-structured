@@ -7,8 +7,8 @@ import numpy as np
 
 import torch
 
-import torch_butterfly
-from torch_butterfly.permutation import perm_vec_to_mat, invert, matrix_to_butterfly_factor
+import torch_structured
+from torch_structured.butterfly.permutation import perm_vec_to_mat, invert, matrix_to_butterfly_factor
 
 
 class ButterflyPermutationTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class ButterflyPermutationTest(unittest.TestCase):
             for _ in range(num_repeats):
                 log_n = int(math.ceil(math.log2(n)))
                 for log_k in range(1, log_n + 1):
-                    b = torch_butterfly.Butterfly(n, n, bias=False, init='identity')
+                    b = torch_structured.Butterfly(n, n, bias=False, init='identity')
                     factor = torch.randn(n//2, 2, 2)
                     b.twiddle[0, 0, log_k - 1].copy_(factor)
                     matrix = b(torch.eye(n)).t()
@@ -36,15 +36,15 @@ class ButterflyPermutationTest(unittest.TestCase):
         for n in [2, 16, 64]:
             for _ in range(num_repeats):
                 v = np.random.permutation(n)
-                Rinv_perms, L_vec = torch_butterfly.permutation.modular_balance(v)
-                self.assertTrue(torch_butterfly.permutation.is_modular_balanced(L_vec))
+                Rinv_perms, L_vec = torch_structured.butterfly.permutation.modular_balance(v)
+                self.assertTrue(torch_structured.butterfly.permutation.is_modular_balanced(L_vec))
                 v2 = v
                 for p in Rinv_perms:
                     v2 = v2[p]
                 self.assertTrue(np.all(v2 == L_vec))
                 lv2 = L_vec
                 for p in reversed(Rinv_perms):
-                    lv2 = lv2[torch_butterfly.permutation.invert(p)]
+                    lv2 = lv2[torch_structured.butterfly.permutation.invert(p)]
                 self.assertTrue(np.all(lv2 == v))
                 R_perms = [perm_vec_to_mat(invert(p)) for p in reversed(Rinv_perms)]
                 mat = perm_vec_to_mat(v, left=False)
@@ -59,7 +59,7 @@ class ButterflyPermutationTest(unittest.TestCase):
                 for complex in [False, True]:
                     for _ in range(num_repeats):
                         v = torch.randperm(n)
-                        b = torch_butterfly.permutation.perm2butterfly_slow(v, complex,
+                        b = torch_structured.butterfly.permutation.perm2butterfly_slow(v, complex,
                                                                             increasing_stride)
                         input = torch.arange(n, dtype=torch.float32)
                         if complex:
@@ -73,7 +73,7 @@ class ButterflyPermutationTest(unittest.TestCase):
                 for complex in [False, True]:
                     for _ in range(num_repeats):
                         v = torch.randperm(n)
-                        b = torch_butterfly.permutation.perm2butterfly(v, complex,
+                        b = torch_structured.butterfly.permutation.perm2butterfly(v, complex,
                                                                        increasing_stride)
                         input = torch.arange(n, dtype=torch.float32)
                         if complex:

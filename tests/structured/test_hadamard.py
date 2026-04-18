@@ -1,11 +1,11 @@
-"""Tests for torch_butterfly.structured.hadamard."""
+"""Tests for torch_structured.structured.hadamard."""
 
 import numpy as np
 import pytest
 import torch
 from scipy.linalg import hadamard
 
-from torch_butterfly.structured.hadamard import hadamard_transform_torch
+from torch_structured.structured.hadamard import hadamard_transform_torch
 
 
 def _device():
@@ -31,7 +31,7 @@ def test_hadamard_transform_torch_normalize():
 
 
 def test_hadamard_transform_cuda_if_available():
-    cuda_ext = pytest.importorskip("torch_butterfly._hadamard_cuda")
+    cuda_ext = pytest.importorskip("torch_structured._hadamard_cuda")
     assert hasattr(cuda_ext, "hadamard_transform")
     n = 32
     x = torch.randn(4, n, device="cuda")

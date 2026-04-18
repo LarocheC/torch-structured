@@ -5,15 +5,12 @@ import torch
 from torch import nn
 from torch.utils.dlpack import to_dlpack, from_dlpack
 
-# Check if cupy is available
 if torch.cuda.is_available():
     use_cupy = True
     try:
         import cupy as cp
-    except:
+    except Exception:
         use_cupy = False
-        # import warnings
-        # warnings.warn("Cupy isn't installed or isn't working properly. Will use Pytorch's complex matmul, which is slower.")
 else:
     use_cupy = False
 
@@ -28,7 +25,6 @@ if use_cupy:
 
 
 def torch2cp(tensor):
-    # Need contiguous, or else it will error
     return cp.fromDlpack(to_dlpack(torch.view_as_real(tensor.cuda().contiguous()))).view(
         complex_torch_dtype_to_np[tensor.dtype]).squeeze(-1)
 
@@ -39,7 +35,6 @@ def cp2torch(tensor):
 
 
 def complex_matmul_torch(X, Y):
-    # return X.real @ Y.real - X.imag @ Y.imag + 1j * (X.real @ Y.imag + X.imag @ Y.real)
     return torch.view_as_complex(torch.stack([X.real @ Y.real - X.imag @ Y.imag,
                                               X.real @ Y.imag + X.imag @ Y.real], dim=-1))
 
@@ -49,9 +44,6 @@ class ComplexMatmul(torch.autograd.Function):
     @staticmethod
     def forward(ctx, X, Y):
         ctx.save_for_backward(X, Y)
-        # return torch.view_as_complex(torch.stack([X.real @ Y.real - X.imag @ Y.imag,
-        #                                           X.real @ Y.imag + X.imag @ Y.real], dim=-1))
-        # return complex_matmul_torch(X, Y)
         if not X.is_cuda:
             return X @ Y
         else:
@@ -64,12 +56,6 @@ class ComplexMatmul(torch.autograd.Function):
         grad_X, grad_Y = None, None
         if ctx.needs_input_grad[0]:
             Y_t = Y.transpose(-1, -2)
-            # grad_X = (grad @ Y_t.conj()).sum_to_size(*X.shape)
-            # grad_X = torch.view_as_complex(
-            #     torch.stack([grad.real @ Y_t.real + grad.imag @ Y_t.imag,
-            #                  -grad.real @ Y_t.imag + grad.imag @ Y_t.real], dim=-1)
-            # ).sum_to_size(*X.shape)
-            # grad_X = complex_matmul_torch(grad, Y_t.conj()).sum_to_size(*X.shape)
             if not Y.is_cuda:
                 grad_X = (grad @ Y_t.conj()).sum_to_size(*X.shape)
             else:
@@ -77,12 +63,6 @@ class ComplexMatmul(torch.autograd.Function):
                           else complex_matmul_torch(grad, Y_t.conj())).sum_to_size(*X.shape)
         if ctx.needs_input_grad[1]:
             X_t = X.transpose(-1, -2)
-            # grad_Y = (X_t.conj() @ grad).sum_to_size(*Y.shape)
-            # grad_Y = torch.view_as_complex(
-            #     torch.stack([X_t.real @ grad.real + X_t.imag @ grad.imag,
-            #                  X_t.real @ grad.imag - X_t.imag @ grad.real], dim=-1)
-            # ).sum_to_size(*Y.shape)
-            # grad_Y = complex_matmul_torch(X_t.conj(), grad).sum_to_size(*Y.shape)
             if not X.is_cuda:
                 grad_Y = (X_t.conj() @ grad).sum_to_size(*Y.shape)
             else:
@@ -95,8 +75,6 @@ def complex_matmul(X, Y):
     return X @ Y if not X.is_complex() else ComplexMatmul.apply(X, Y)
 
 
-# Implement backward pass of real2complex explicitly to avoid annoying (but harmless) warning
-# "Casting complex values to real discards the imaginary part", as of Pytorch 1.7
 class Real2ComplexFn(torch.autograd.Function):
 
     @staticmethod
@@ -111,7 +89,6 @@ class Real2ComplexFn(torch.autograd.Function):
 real2complex = Real2ComplexFn.apply
 
 
-# nn.Module form just to support convenient use of nn.Sequential
 class Real2Complex(nn.Module):
     def forward(self, input):
         return real2complex(input)
@@ -122,8 +99,6 @@ class Complex2Real(nn.Module):
         return input.real
 
 
-# Pytorch 1.7 doesn't have indexing_backward for complex so we have to write the backward
-# pass explicitly
 class IndexLastDim(torch.autograd.Function):
 
     @staticmethod
@@ -142,7 +117,6 @@ class IndexLastDim(torch.autograd.Function):
 index_last_dim = IndexLastDim.apply
 
 
-# Pytorch 1.7 doesn't support complex reshape backward for non-contiguous tensors (fixed in nightly)
 def complex_reshape(x, *shape):
     if not x.is_complex():
         return x.reshape(*shape)
@@ -165,9 +139,8 @@ class ComplexLinear(nn.Module):
 
     def reset_parameters(self) -> None:
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        # Uniform random doesn't account for complex so the variance is larger by factor of sqrt(2)
         with torch.no_grad():
-            weight /= math.sqrt(2)
+            self.weight /= math.sqrt(2)
         if self.bias is not None:
             fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)

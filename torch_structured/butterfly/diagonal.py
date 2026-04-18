@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from torch_butterfly.complex_utils import real_dtype_to_complex
+from .complex_utils import real_dtype_to_complex
 
 
 class Diagonal(nn.Module):

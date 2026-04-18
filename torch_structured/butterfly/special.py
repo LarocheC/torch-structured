@@ -6,14 +6,14 @@ from torch import nn
 from torch.nn import functional as F
 import torch.fft
 
-from torch_butterfly.butterfly import Butterfly, ButterflyUnitary
-from torch_butterfly.permutation import FixedPermutation, bitreversal_permutation, invert
-from torch_butterfly.permutation import wavelet_permutation
-from torch_butterfly.diagonal import Diagonal
-from torch_butterfly.complex_utils import real2complex, Real2Complex, Complex2Real
-from torch_butterfly.complex_utils import index_last_dim
-from torch_butterfly.combine import diagonal_butterfly, TensorProduct, butterfly_product
-from torch_butterfly.combine import butterfly_kronecker, permutation_kronecker
+from .butterfly import Butterfly, ButterflyUnitary
+from .permutation import FixedPermutation, bitreversal_permutation, invert
+from .permutation import wavelet_permutation
+from .diagonal import Diagonal
+from .complex_utils import real2complex, Real2Complex, Complex2Real
+from .complex_utils import index_last_dim
+from .combine import diagonal_butterfly, TensorProduct, butterfly_product
+from .combine import butterfly_kronecker, permutation_kronecker
 
 
 def fft(n, normalized=False, br_first=True, with_br_perm=True) -> nn.Module:
