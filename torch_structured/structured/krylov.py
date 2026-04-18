@@ -19,7 +19,7 @@ from ._compat import krylov_construct
 from ._compat import complex_mult, conjugate
 
 try:
-    from torch_butterfly import _diag_mult_cuda as diag_mult_cuda
+    from torch_structured import _diag_mult_cuda as diag_mult_cuda
 except (ImportError, RuntimeError) as e:
     diag_mult_cuda = None
 

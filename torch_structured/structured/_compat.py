@@ -8,7 +8,7 @@ Bundles three things the legacy LDR code depends on:
 2. ``(..., 2)``-pair complex helpers ``complex_mult`` / ``conjugate`` - a
    float-pair representation from before ``torch.complex64`` existed
    (originally ``pytorch/structure/complex_utils.py``). The *top-level*
-   ``torch_butterfly.complex_utils`` uses native complex tensors and is
+   ``torch_structured.complex_utils`` uses native complex tensors and is
    the canonical API - do not re-export these from here.
 
 3. ``krylov_construct`` - small numpy helper used by ``krylov.py`` slow

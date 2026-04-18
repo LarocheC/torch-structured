@@ -1,5 +1,5 @@
-torch-butterfly
-Copyright (c) 2019-2026 the torch-butterfly authors and contributors.
+torch-structured
+Copyright (c) 2019-2026 the torch-structured authors and contributors.
 
 This product includes software developed at Stanford HazyResearch.
 
@@ -7,7 +7,7 @@ This project is a consolidation of three upstream repositories. Please cite
 the corresponding papers when using code from the relevant subpackage.
 
 =============================================================================
-Core `torch_butterfly` package (butterfly matrices)
+Core `torch_structured` package (butterfly matrices)
 =============================================================================
 
 Original upstream: https://github.com/HazyResearch/learning-circuits
@@ -28,7 +28,7 @@ Also: https://github.com/HazyResearch/butterfly
     }
 
 =============================================================================
-`torch_butterfly.structured` subpackage (low displacement rank)
+`torch_structured.structured` subpackage (low displacement rank)
 =============================================================================
 
 Ported from https://github.com/HazyResearch/structured-nets
@@ -46,7 +46,7 @@ Hadamard CUDA kernel adapted from the NVIDIA CUDA Samples:
 (see csrc/hadamard/hadamard_cuda_kernel.cu for the included copyright notice).
 
 =============================================================================
-`torch_butterfly.monarch` subpackage (Monarch primitives)
+`torch_structured.monarch` subpackage (Monarch primitives)
 =============================================================================
 
 Ported from https://github.com/HazyResearch/m2
@@ -76,7 +76,7 @@ The flashmm CUDA extension depends on NVIDIA MathDx (cuFFTDx / cuBLASDx),
 which is subject to NVIDIA's EULA and is *not* distributed with this
 repository. Users must obtain MathDx 22.02 separately and drop the headers
 under csrc/flashmm/mathdx/22.02/include/ before building with
-TORCH_BUTTERFLY_BUILD_FLASHMM=1.
+TORCH_STRUCTURED_BUILD_FLASHMM=1.
 
 =============================================================================
 Third-party code bundled in csrc/flashmm/

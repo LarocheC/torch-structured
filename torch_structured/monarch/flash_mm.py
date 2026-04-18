@@ -1,7 +1,7 @@
 # Copyright (c) 2023, Dan Fu and Simran Arora.
 #
 # Requires the optional flashmm CUDA extension. To build it, install
-# torch-butterfly with the env var ``TORCH_BUTTERFLY_BUILD_FLASHMM=1`` set
+# torch-structured with the env var ``TORCH_STRUCTURED_BUILD_FLASHMM=1`` set
 # (and provide NVIDIA MathDx 22.02 headers under csrc/flashmm/mathdx/22.02/include).
 
 import math
@@ -14,7 +14,7 @@ import opt_einsum as oe
 contract = oe.contract
 
 try:
-    from torch_butterfly import _flashmm as flashmm
+    from torch_structured import _flashmm as flashmm
     mm_block_fwd = flashmm.mm_block_fwd
     hyena_filter_fwd = flashmm.hyena_filter_fwd
     exp_mod_in_place_fwd = flashmm.exp_mod_in_place_fwd
@@ -30,7 +30,7 @@ def _require_flashmm():
     if not _HAS_FLASHMM:
         raise RuntimeError(
             "The flashmm CUDA extension is not available. Rebuild with "
-            "TORCH_BUTTERFLY_BUILD_FLASHMM=1 and NVIDIA MathDx 22.02 headers "
+            "TORCH_STRUCTURED_BUILD_FLASHMM=1 and NVIDIA MathDx 22.02 headers "
             "under csrc/flashmm/mathdx/22.02/include/."
         )
 

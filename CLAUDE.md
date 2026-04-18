@@ -1,9 +1,9 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**torch_butterfly — Build System Modernization**
+**torch_structured — Build System Modernization**
 
-Modernize the packaging and build system for `torch_butterfly`, a PyTorch library implementing butterfly matrices for efficient structured linear transforms (FFT, DCT, Hadamard, circulant, etc.). The library has C++/CUDA extensions and currently uses a legacy `setup.py`-based build. The goal is to make it installable via `uv` with a modern `pyproject.toml`, targeting Python 3.10+ and PyTorch 2.x.
+Modernize the packaging and build system for `torch_structured`, a PyTorch library implementing butterfly matrices for efficient structured linear transforms (FFT, DCT, Hadamard, circulant, etc.). The library has C++/CUDA extensions and currently uses a legacy `setup.py`-based build. The goal is to make it installable via `uv` with a modern `pyproject.toml`, targeting Python 3.10+ and PyTorch 2.x.
 
 **Core Value:** A single `uv pip install .` (or `uv pip install -e .`) that just works — with CUDA support when available, without conda or manual steps.
 
@@ -61,7 +61,7 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - `NVCC_FLAGS` - Custom NVCC compiler flags in `setup.py`
 - `BUILD_DOCS=1` - Skip building C++ extensions in `setup.py`
 - `PYTHONPATH` - Must include project root and `fairseq/` for Ray workers
-- `setup.py` - Main package build (torch_butterfly with C++/CUDA extensions)
+- `setup.py` - Main package build (torch_structured with C++/CUDA extensions)
 - `butterfly/factor_multiply/setup.py` - Legacy CUDA extension build
 - `butterfly/factor_multiply_fast/setup.py` - Legacy fast CUDA extension build
 - `learning_transforms/setup.py` - Cython extension build
@@ -69,9 +69,9 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - `convolution/cfg/` - Full Hydra config tree (model, optimizer, dataset, runner, lr_scheduler)
 ## C++/CUDA Extensions
 - Source: `csrc/butterfly.cpp` (dispatch), `csrc/cpu/butterfly_cpu.cpp`, `csrc/cuda/butterfly_cuda.cu`
-- Registers custom ops via `TORCH_LIBRARY(torch_butterfly, m)`:
+- Registers custom ops via `TORCH_LIBRARY(torch_structured, m)`:
 - CUDA architecture: sm_35 minimum
-- Loaded at runtime via `torch.ops.load_library()` in `torch_butterfly/__init__.py`
+- Loaded at runtime via `torch.ops.load_library()` in `torch_structured/__init__.py`
 - `butterfly/factor_multiply/` - Factor multiply CUDA extension (sm_70 for V100)
 - `butterfly/factor_multiply_fast/` - Fast butterfly multiply CUDA extension (sm_30 minimum)
 ## Platform Requirements
@@ -114,12 +114,12 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - No linter configured
 - No type checking (no `mypy.ini` or `pyproject.toml` with mypy config)
 - Standard library first, blank line, then third-party, blank line, then local
-- Example from `torch_butterfly/butterfly.py`:
+- Example from `torch_structured/butterfly.py`:
 - `import torch` (always top-level)
 - `from torch import nn` (preferred over `import torch.nn as nn`)
 - `import torch.nn.functional as F` (standard alias)
 - `from torch.nn import functional as F` (also used, inconsistent)
-- Local package imports use explicit relative or absolute: `from torch_butterfly.multiply import butterfly_multiply`
+- Local package imports use explicit relative or absolute: `from torch_structured.multiply import butterfly_multiply`
 - `# noqa` comments used on re-exports in `__init__.py`
 ## nn.Module Patterns
 - Always call `super().__init__()` first
@@ -142,7 +142,7 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 #define CHECK_DEVICE(x) TORCH_CHECK(x.device().type() == torch::kCPU || x.device().type() == torch::kCUDA, ...)
 #define CHECK_DIM(x, y) TORCH_CHECK(x.dim() == y, ...)
 #define CHECK_SHAPE(x, ...) TORCH_CHECK(x.sizes() == torch::IntArrayRef({__VA_ARGS__}), ...)
-- `RuntimeError` raised for CUDA version mismatch in `torch_butterfly/__init__.py`
+- `RuntimeError` raised for CUDA version mismatch in `torch_structured/__init__.py`
 - No try/except blocks in the core library code
 ## Logging
 - Commented-out `print` statements appear in test files for debugging (see `tests/test_multiply.py` lines 48-54)
@@ -157,20 +157,20 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - Use plain text format (not Sphinx/NumPy/Google style)
 - Parameter sections use `Parameters:` / `Parameter:` and `Return:` / `Returns:` headings
 - Shape annotations included: `input: (batch, *, in_size)`
-- Example from `torch_butterfly/combine.py`:
+- Example from `torch_structured/combine.py`:
 ## Function Design
 - Type annotations used sparingly: present on some function signatures (`combine.py`), absent on most
 - Return type annotations used with `-> nn.Module` or `-> Butterfly` on factory/combination functions
-- `torch.jit.script` decorators on performance-critical functions in `torch_butterfly/multiply.py`
+- `torch.jit.script` decorators on performance-critical functions in `torch_structured/multiply.py`
 - Factory functions return `nn.Module` or `nn.Sequential`
 - Tensor operations return `torch.Tensor`
 - In-place operations return `self` (e.g., `__imul__`)
 ## Module Design
-- `torch_butterfly/__init__.py` defines `__all__` with public API: `Butterfly`, `ButterflyUnitary`, `ButterflyBmm`, `ButterflyBase4`, `butterfly_multiply`
+- `torch_structured/__init__.py` defines `__all__` with public API: `Butterfly`, `ButterflyUnitary`, `ButterflyBmm`, `ButterflyBase4`, `butterfly_multiply`
 - Submodules imported as namespace: `from . import combine`, `from . import special`
 - No barrel files beyond `__init__.py`
 - Loaded dynamically in `__init__.py` via `torch.ops.load_library`
-- Registered as TorchScript custom ops: `torch.ops.torch_butterfly.butterfly_multiply_fw`
+- Registered as TorchScript custom ops: `torch.ops.torch_structured.butterfly_multiply_fw`
 - CPU/CUDA dispatch handled in C++ with `#ifdef WITH_CUDA` guards
 - Consistently used when modifying parameters outside of training:
 <!-- GSD:conventions-end -->
@@ -180,7 +180,7 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 
 ## Pattern Overview
 - PyTorch C++/CUDA extension pattern: native kernels registered via `torch.ops`, wrapped in Python `torch.jit.script` functions, consumed by `nn.Module` classes
-- Two-generation codebase: a legacy `butterfly/` package (old interface) and the current `torch_butterfly/` package (new interface)
+- Two-generation codebase: a legacy `butterfly/` package (old interface) and the current `torch_structured/` package (new interface)
 - Experiment directories (`cnn/`, `convolution/`, `transformer/`, `learning_transforms/`, `gumbel-sinkhorn/`) are standalone scripts that import from the core packages
 - All transforms operate on power-of-2 sizes; inputs are zero-padded or trimmed internally
 ## Layers
@@ -188,25 +188,25 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - Location: `csrc/`
 - Contains: `csrc/butterfly.cpp` (dispatch + autograd), `csrc/cpu/butterfly_cpu.cpp` (CPU impl), `csrc/cuda/butterfly_cuda.cu` (CUDA impl)
 - Depends on: PyTorch C++ API (`torch/script.h`, `torch/extension.h`)
-- Used by: `torch_butterfly/multiply.py` via `torch.ops.torch_butterfly.*`
-- Key detail: Registers three ops via `TORCH_LIBRARY(torch_butterfly, m)`: `butterfly_multiply_fw`, `butterfly_multiply_bw`, `butterfly_multiply` (which wraps autograd)
+- Used by: `torch_structured/multiply.py` via `torch.ops.torch_structured.*`
+- Key detail: Registers three ops via `TORCH_LIBRARY(torch_structured, m)`: `butterfly_multiply_fw`, `butterfly_multiply_bw`, `butterfly_multiply` (which wraps autograd)
 - Purpose: Python-accessible butterfly multiplication with both native and pure-PyTorch fallback
-- Location: `torch_butterfly/multiply.py`, `torch_butterfly/multiply_base4.py`
+- Location: `torch_structured/multiply.py`, `torch_structured/multiply_base4.py`
 - Contains: `butterfly_multiply()` (calls native op), `butterfly_multiply_torch()` (pure PyTorch reference), `butterfly_multiply_base4_torch()`, `twiddle_base2_to_base4()`
 - Depends on: Native kernel layer (for `butterfly_multiply`), PyTorch (for `_torch` variants)
-- Used by: `torch_butterfly/butterfly.py`, `torch_butterfly/butterfly_base4.py`
+- Used by: `torch_structured/butterfly.py`, `torch_structured/butterfly_base4.py`
 - Purpose: User-facing modules compatible with `torch.nn.Linear`
-- Location: `torch_butterfly/butterfly.py`
+- Location: `torch_structured/butterfly.py`
 - Contains: `Butterfly` (main class), `ButterflyUnitary` (unitary-constrained variant), `ButterflyBmm` (batched variant)
-- Depends on: Core multiply layer, `torch_butterfly/complex_utils.py`
-- Used by: `torch_butterfly/special.py`, `torch_butterfly/combine.py`, experiment code
+- Depends on: Core multiply layer, `torch_structured/complex_utils.py`
+- Used by: `torch_structured/special.py`, `torch_structured/combine.py`, experiment code
 - Purpose: Combine butterfly matrices with diagonals, permutations, and other butterflies
-- Location: `torch_butterfly/combine.py`, `torch_butterfly/permutation.py`, `torch_butterfly/diagonal.py`
+- Location: `torch_structured/combine.py`, `torch_structured/permutation.py`, `torch_structured/diagonal.py`
 - Contains: `diagonal_butterfly()`, `butterfly_product()`, `butterfly_kronecker()`, `TensorProduct`, `FixedPermutation`, `Diagonal`, `perm2butterfly()`
 - Depends on: nn.Module layer
-- Used by: `torch_butterfly/special.py`
+- Used by: `torch_structured/special.py`
 - Purpose: Factory functions that construct butterfly networks performing exact well-known transforms
-- Location: `torch_butterfly/special.py`
+- Location: `torch_structured/special.py`
 - Contains: `fft()`, `ifft()`, `fft_unitary()`, `ifft_unitary()`, `dct()`, `dst()`, `circulant()`, `toeplitz()`, `hadamard()`, `hadamard_diagonal()`, `conv1d_circular_singlechannel()`, `conv1d_circular_multichannel()`
 - Depends on: nn.Module layer, composition layer, permutation layer
 - Used by: Tests, experiment code
@@ -224,26 +224,26 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 - Permutations stored as `register_buffer` (not learnable)
 ## Key Abstractions
 - Purpose: Product of log(N) butterfly factors, drop-in replacement for `nn.Linear`
-- Examples: `torch_butterfly/butterfly.py` (lines 15-208)
+- Examples: `torch_structured/butterfly.py` (lines 15-208)
 - Pattern: Parameterized by a single twiddle tensor; forward pass calls into C++/CUDA; supports transpose, conjugate, subtwiddle
 - Purpose: Butterfly constrained to be unitary via angle parameterization
-- Examples: `torch_butterfly/butterfly.py` (lines 210-308)
+- Examples: `torch_structured/butterfly.py` (lines 210-308)
 - Pattern: Inherits from Butterfly but overrides twiddle to use 4 angle parameters per 2x2 block, constructs unitary matrix on the fly in forward()
 - Purpose: Apply a fixed (non-learnable) permutation to the last dimension
-- Examples: `torch_butterfly/permutation.py` (lines 55-78)
+- Examples: `torch_structured/permutation.py` (lines 55-78)
 - Pattern: Stores permutation as buffer; uses custom autograd for complex backward compatibility
 - Purpose: Element-wise multiplication by a learnable diagonal
-- Examples: `torch_butterfly/diagonal.py`
+- Examples: `torch_structured/diagonal.py`
 - Pattern: Simple wrapper around `input * self.diagonal`
 - Purpose: Fuse a diagonal matrix into a butterfly's twiddle factors (avoids separate diagonal module)
-- Examples: `torch_butterfly/combine.py` (lines 11-53)
+- Examples: `torch_structured/combine.py` (lines 11-53)
 - Pattern: Modifies the first or last twiddle factor in-place to absorb the diagonal
 ## Entry Points
 - Location: `setup.py`
 - Triggers: `python setup.py install`
-- Responsibilities: Compiles C++/CUDA extensions from `csrc/`, installs `torch_butterfly` package
-- Location: `torch_butterfly/__init__.py`
-- Triggers: `import torch_butterfly`
+- Responsibilities: Compiles C++/CUDA extensions from `csrc/`, installs `torch_structured` package
+- Location: `torch_structured/__init__.py`
+- Triggers: `import torch_structured`
 - Responsibilities: Loads compiled native libraries (`_version`, `_butterfly`), checks CUDA version compatibility, exports `Butterfly`, `ButterflyUnitary`, `ButterflyBmm`, `ButterflyBase4`, `butterfly_multiply`
 - Location: `tests/test_butterfly.py`, `tests/test_special.py`, etc.
 - Triggers: pytest
@@ -251,7 +251,7 @@ Modernize the packaging and build system for `torch_butterfly`, a PyTorch librar
 ## Error Handling
 - C++ layer uses `TORCH_CHECK` macros for shape/device validation in `csrc/butterfly.cpp`
 - Python layer uses `assert` statements for shape, size, and parameter validation
-- CUDA version mismatch raises `RuntimeError` at import time in `torch_butterfly/__init__.py`
+- CUDA version mismatch raises `RuntimeError` at import time in `torch_structured/__init__.py`
 - Power-of-2 size requirements enforced via assertion: `assert n == 1 << log_n, 'n must be a power of 2'`
 ## Cross-Cutting Concerns
 <!-- GSD:architecture-end -->

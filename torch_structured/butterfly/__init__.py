@@ -1,6 +1,6 @@
 """Butterfly factors and exact fast transforms.
 
-Moved from the old top-level ``torch_butterfly`` package. Loading this
+Moved from the old top-level ``torch_structured`` package. Loading this
 subpackage triggers compilation-time checks on the two torch.ops-style
 extensions (``_butterfly`` and ``_version``) that live in the parent
 ``torch_structured`` package directory.

@@ -1,10 +1,10 @@
-# torch-butterfly
+# torch-structured
 
 Consolidated PyTorch library of structured-matrix primitives:
 
-- **`torch_butterfly`** (core) — butterfly matrices for exact fast linear transforms (FFT, iFFT, DCT, DST, Hadamard, circulant, Toeplitz) as learnable `nn.Module` drop-in replacements for `nn.Linear`.
-- **`torch_butterfly.structured`** — low-displacement-rank layers ported from [structured-nets](https://github.com/HazyResearch/structured-nets): Toeplitz-like, Hankel, Vandermonde, Fastfood, Circulant, LDR subdiagonal / tridiagonal, Krylov utilities.
-- **`torch_butterfly.monarch`** — Monarch / block-diagonal-butterfly primitives ported from [m2](https://github.com/HazyResearch/m2): block-diagonal and block-diagonal-butterfly multiplies, structured linear layers, butterfly-factor helper, Hyena implicit long filter, and an opt-in fused flashmm CUDA kernel.
+- **`torch_structured`** (core) — butterfly matrices for exact fast linear transforms (FFT, iFFT, DCT, DST, Hadamard, circulant, Toeplitz) as learnable `nn.Module` drop-in replacements for `nn.Linear`.
+- **`torch_structured.structured`** — low-displacement-rank layers ported from [structured-nets](https://github.com/HazyResearch/structured-nets): Toeplitz-like, Hankel, Vandermonde, Fastfood, Circulant, LDR subdiagonal / tridiagonal, Krylov utilities.
+- **`torch_structured.monarch`** — Monarch / block-diagonal-butterfly primitives ported from [m2](https://github.com/HazyResearch/m2): block-diagonal and block-diagonal-butterfly multiplies, structured linear layers, butterfly-factor helper, Hyena implicit long filter, and an opt-in fused flashmm CUDA kernel.
 
 See the `NOTICE` file for upstream attributions and citations.
 
@@ -35,9 +35,9 @@ FORCE_CPU=1 uv pip install .    # force CPU-only build
 `TORCH_CUDA_ARCH_LIST` targets specific GPU architectures (default: `"7.0 8.0 9.0+PTX"`).
 
 Built extensions (CUDA builds):
-- `torch_butterfly._butterfly`, `torch_butterfly._version` — core butterfly ops (torch.ops-style).
-- `torch_butterfly._hadamard_cuda` — fast Walsh-Hadamard transform (pybind module).
-- `torch_butterfly._diag_mult_cuda` — subdiagonal cycle-multiply helper (pybind module).
+- `torch_structured._butterfly`, `torch_structured._version` — core butterfly ops (torch.ops-style).
+- `torch_structured._hadamard_cuda` — fast Walsh-Hadamard transform (pybind module).
+- `torch_structured._diag_mult_cuda` — subdiagonal cycle-multiply helper (pybind module).
 
 ### Optional: flashmm extension
 
@@ -45,7 +45,7 @@ The Monarch Mixer fused `flashmm` kernel is opt-in because it requires NVIDIA Ma
 
 ```bash
 python csrc/flashmm/fetch_kernel_sources.py
-TORCH_BUTTERFLY_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
+TORCH_STRUCTURED_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
 ```
 
 ## Quickstart
@@ -54,8 +54,8 @@ TORCH_BUTTERFLY_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
 
 ```python
 import torch
-from torch_butterfly import Butterfly
-from torch_butterfly.special import fft, hadamard
+from torch_structured import Butterfly
+from torch_structured.special import fft, hadamard
 
 layer = Butterfly(in_size=1024, out_size=1024)
 fft_layer = fft(1024)
@@ -65,8 +65,8 @@ hadamard_layer = hadamard(1024)
 ### Structured (LDR) layers
 
 ```python
-from torch_butterfly.structured.layers import ToeplitzLike, LDRSubdiagonal
-from torch_butterfly.structured.hadamard import hadamard_transform_torch
+from torch_structured.structured.layers import ToeplitzLike, LDRSubdiagonal
+from torch_structured.structured.hadamard import hadamard_transform_torch
 
 toeplitz = ToeplitzLike(layer_size=256, r=2)
 ldr_sd = LDRSubdiagonal(layer_size=256, r=2)
@@ -77,8 +77,8 @@ y = hadamard_transform_torch(torch.randn(4, 128))
 
 ```python
 import torch
-from torch_butterfly.monarch.blockdiag_linear import BlockdiagLinear
-from torch_butterfly.monarch.blockdiag_butterfly_multiply import (
+from torch_structured.monarch.blockdiag_linear import BlockdiagLinear
+from torch_structured.monarch.blockdiag_butterfly_multiply import (
     blockdiag_butterfly_multiply,
 )
 

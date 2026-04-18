@@ -18,9 +18,9 @@ The flashmm CUDA extension is opt-in. To build it:
 3. Build with the env var set:
 
    ```
-   TORCH_BUTTERFLY_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
+   TORCH_STRUCTURED_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
    ```
 
-The Python side (`torch_butterfly.monarch.flash_mm`) imports the compiled
+The Python side (`torch_structured.monarch.flash_mm`) imports the compiled
 extension lazily, so other subpackages remain usable even if flashmm is not
 built.
