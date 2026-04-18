@@ -124,7 +124,7 @@ torch::Tensor butterfly_multiply(torch::Tensor twiddle,
   return ButterflyMultiply::apply(twiddle, input, increasing_stride, output_size);
 }
 
-TORCH_LIBRARY(torch_butterfly, m) {
+TORCH_LIBRARY(torch_structured, m) {
   m.def("butterfly_multiply_fw", butterfly_multiply_fw);
   m.def("butterfly_multiply_bw", butterfly_multiply_bw);
   m.def("butterfly_multiply", butterfly_multiply);
