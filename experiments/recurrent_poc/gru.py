@@ -62,9 +62,36 @@ class StackedGateGRUCell(nn.Module):
         return (1 - z) * n + z * h_prev
 
 
+def unroll_cell(cell, x_seq, h0):
+    """Unroll a recurrent cell over T steps, return the full hidden sequence.
+
+    Parameters:
+        cell: nn.Module with forward(x_t, h_prev) -> h_next
+        x_seq: (B, T, input_size) input sequence
+        h0: (B, hidden_size) initial hidden state
+
+    Returns:
+        h_seq: (B, T, hidden_size) stacked hidden states at every step.
+
+    The full sequence (not just final h) is returned so torch.compile has a
+    concrete tensor to trace and so fwd+bwd benches can .sum().backward()
+    over the whole trajectory.
+    """
+    h = h0
+    outs = []
+    for t in range(x_seq.size(1)):
+        h = cell(x_seq[:, t], h)
+        outs.append(h)
+    return torch.stack(outs, dim=1)
+
+
 if __name__ == "__main__":
     cell = StackedGateGRUCell(16, 32, kind="dense")
     x = torch.randn(4, 16)
     h = torch.zeros(4, 32)
     h_next = cell(x, h)
     print(f"dense GRU cell: x={tuple(x.shape)}, h={tuple(h.shape)} -> {tuple(h_next.shape)}")
+    x_seq = torch.randn(4, 5, 16)
+    h0 = torch.zeros(4, 32)
+    h_seq = unroll_cell(cell, x_seq, h0)
+    print(f"unroll_cell: x_seq={tuple(x_seq.shape)} -> h_seq={tuple(h_seq.shape)}")
