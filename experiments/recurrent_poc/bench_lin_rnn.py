@@ -7,6 +7,7 @@ available in this PyTorch build, the scan column reports 'N/A'.
 """
 
 import argparse
+import os
 import statistics
 import sys
 import time
@@ -14,9 +15,11 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*different CUDA versions.*")
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import torch
 
-from .lin_rnn import LinearDiagRNN, _HAS_SCAN
+from experiments.recurrent_poc.lin_rnn import LinearDiagRNN, _HAS_SCAN
 
 
 def time_fn(fn, *, warmup: int, iters: int, device: torch.device) -> float:

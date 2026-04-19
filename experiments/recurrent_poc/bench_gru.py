@@ -9,6 +9,7 @@ Output: a single plain-text table on stdout. No JSON, no file writes.
 """
 
 import argparse
+import os
 import statistics
 import sys
 import time
@@ -16,10 +17,14 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*different CUDA versions.*")
 
+# Allow running directly as a script (python path/to/bench_gru.py) by
+# putting the repo root on sys.path before the package import.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import torch
 from torch import nn
 
-from .gru import StackedGateGRUCell
+from experiments.recurrent_poc.gru import StackedGateGRUCell
 
 
 def time_fn(fn, *, warmup: int, iters: int, device: torch.device) -> float:
