@@ -10,12 +10,13 @@
 #define AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(TYPE, NAME, ...)                                  \
   [&] {                                                                                          \
     const auto& the_type = TYPE;                                                                 \
+    constexpr const char* at_dispatch_name = NAME;                                               \
     /* don't use TYPE again in case it is an expensive or side-effect op */                      \
     at::ScalarType _st = ::detail::scalar_type(the_type);                                        \
-    RECORD_KERNEL_FUNCTION_DTYPE(NAME, _st);                                                     \
+    RECORD_KERNEL_FUNCTION_DTYPE(at_dispatch_name, _st);                                         \
     switch (_st) {                                                                               \
-      AT_PRIVATE_CASE_TYPE(NAME, at::ScalarType::Float, float, __VA_ARGS__)                      \
-      AT_PRIVATE_CASE_TYPE(NAME, at::ScalarType::ComplexFloat, c10::complex<float>, __VA_ARGS__) \
+      AT_PRIVATE_CASE_TYPE_USING_HINT(at::ScalarType::Float, scalar_t, __VA_ARGS__)              \
+      AT_PRIVATE_CASE_TYPE_USING_HINT(at::ScalarType::ComplexFloat, scalar_t, __VA_ARGS__)       \
       default:                                                                                   \
         AT_ERROR(#NAME, " not implemented for '", toString(_st), "'");                           \
     }                                                                                            \
