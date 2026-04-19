@@ -8,6 +8,8 @@ three subpackages:
 - ``torch_structured.structured`` - low-displacement-rank layers
   (Toeplitz-like, Hankel, Vandermonde, Fastfood, Circulant, LDR).
 - ``torch_structured.monarch`` - Monarch / block-diagonal-butterfly primitives.
+- ``torch_structured.recurrent`` - recurrent layers (LRU) that plug into
+  the ``make_linear`` factory.
 
 Importing compiled C++/CUDA extensions (``_butterfly``, ``_version``) happens
 inside the ``butterfly`` subpackage on first import; the other subpackages
@@ -15,7 +17,7 @@ lazily try-import their own CUDA modules (``_hadamard_cuda``,
 ``_diag_mult_cuda``, ``_flashmm``) when needed.
 """
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 # The butterfly subpackage is imported eagerly because the top-level re-exports
 # its most common classes. The other subpackages are left for the user to
@@ -28,6 +30,8 @@ from .butterfly import (
     ButterflyUnitary,
     butterfly_multiply,
 )
+from .factory import make_linear
+from .recurrent import LRU
 
 __all__ = [
     'Butterfly',
@@ -35,5 +39,7 @@ __all__ = [
     'ButterflyBase4',
     'ButterflyUnitary',
     'butterfly_multiply',
+    'LRU',
+    'make_linear',
     '__version__',
 ]
