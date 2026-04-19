@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 Phase: 03
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-04-03
+Last activity: 2026-04-19 - Completed quick task 260419-v4b: promoted LRU + make_linear into torch_structured public API (v0.4.0)
 
 Progress: [====================] 100% v1.0 | [..........] 0% v1.1
 
@@ -73,6 +73,15 @@ None yet.
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260419-olu | Build POC benchmark suite for recurrent models using torch_structured structured linear layers | 2026-04-19 | 3180d2a | [260419-olu-build-poc-benchmark-suite-for-recurrent-](./quick/260419-olu-build-poc-benchmark-suite-for-recurrent-/) |
+| 260419-p27 | Extend recurrent_poc: torch.compile Track A + structured projections in Track B | 2026-04-19 | a2d0c86 | [260419-p27-extend-recurrent-poc-torch-compile-track](./quick/260419-p27-extend-recurrent-poc-torch-compile-track/) |
+| 260419-pya | Add LRU and Mamba layers with structured B/C as drop-in nn.GRU peers | 2026-04-19 | 0725d2f | [260419-pya-add-lru-and-mamba-layers-with-structured](./quick/260419-pya-add-lru-and-mamba-layers-with-structured/) |
+| 260419-v4b | Promote LRU into torch_structured public API (v0.4.0) for cross-repo use | 2026-04-19 | c7929f3 | [260419-v4b-promote-lru-into-torch-structured-packag](./quick/260419-v4b-promote-lru-into-torch-structured-packag/) |
 
 ## Session Continuity
 
