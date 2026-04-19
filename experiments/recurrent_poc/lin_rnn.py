@@ -41,21 +41,30 @@ class LinearDiagRNN(nn.Module):
     Parameters:
         input_size: input feature dim
         hidden_size: hidden state dim (also the diagonal length)
-        kind: structured-linear kind for B and C (see make_linear)
+        kind: shorthand that sets both kind_B and kind_C (overrides them).
+        kind_B: structured-linear kind for the input projection B.
+        kind_C: structured-linear kind for the output projection C.
         output_size: y_t dim, defaults to hidden_size
         bias: include bias on B and C
+
+    The `a` parameter stays dense (shape (H,)) regardless of kind_B/kind_C.
     """
 
-    def __init__(self, input_size: int, hidden_size: int, kind: str = "dense",
+    def __init__(self, input_size: int, hidden_size: int,
+                 kind: str = None, kind_B: str = "dense", kind_C: str = "dense",
                  output_size: int = None, bias: bool = True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size if output_size is not None else hidden_size
+        if kind is not None:
+            kind_B = kind_C = kind
+        self.kind_B = kind_B
+        self.kind_C = kind_C
         # Init near 1 so the recurrence is stable by default (||a|| < 1, ~0.9).
         self.a = nn.Parameter(torch.full((hidden_size,), 0.9))
-        self.B = make_linear(kind, input_size, hidden_size, bias=bias)
-        self.C = make_linear(kind, hidden_size, self.output_size, bias=bias)
+        self.B = make_linear(kind_B, input_size, hidden_size, bias=bias)
+        self.C = make_linear(kind_C, hidden_size, self.output_size, bias=bias)
 
     def forward_naive(self, x, h0=None):
         """x: (B, T, input_size). Returns (B, T, output_size)."""
@@ -119,4 +128,7 @@ if __name__ == "__main__":
     x = torch.randn(2, 5, 8)
     y = m.forward_naive(x)
     print(f"lin_rnn naive: x={tuple(x.shape)} -> y={tuple(y.shape)}")
+    m2 = LinearDiagRNN(8, 8, kind_B="butterfly", kind_C="dense")
+    y2 = m2.forward_naive(x)
+    print(f"lin_rnn asymmetric (B=butterfly, C=dense): x={tuple(x.shape)} -> y={tuple(y2.shape)}")
     print(f"associative_scan available: {_HAS_SCAN}")
