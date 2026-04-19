@@ -41,47 +41,36 @@ _SCAN_COMPLEX_OK = None
 
 
 def _lru_scan_parallel(a, u, h0):
-    """Parallel associative scan of h_t = a * h_{t-1} + u_t.
-
-    a: (H,) complex; u: (B, T, H) complex; h0: (B, H) complex or None.
-    Combine op: (a1, b1) ⊕ (a2, b2) = (a1 * a2, a2 * b1 + b2).
-    """
+    """Parallel scan of h_t = a*h_{t-1} + u_t. a:(H,) u:(B,T,H) h0:(B,H)|None.
+    Combine: (a1, b1) ⊕ (a2, b2) = (a1*a2, a2*b1 + b2)."""
     Bsz, T, H = u.shape
     a_bt = a.expand(Bsz, T, H).contiguous()
 
     def combine(left, right):
-        a1, b1 = left
-        a2, b2 = right
+        a1, b1 = left; a2, b2 = right
         return (a2 * a1, a2 * b1 + b2)
 
     if h0 is not None:
         ones_a = torch.ones_like(a_bt[:, :1])
         a_in = torch.cat([ones_a, a_bt], dim=1)
         u_in = torch.cat([h0.unsqueeze(1), u], dim=1)
-        scanned = _associative_scan(combine, (a_in, u_in), dim=1,
-                                    combine_mode="generic")
+        scanned = _associative_scan(combine, (a_in, u_in), dim=1, combine_mode="generic")
         h_seq = scanned[1][:, 1:]
     else:
-        scanned = _associative_scan(combine, (a_bt, u), dim=1,
-                                    combine_mode="generic")
+        scanned = _associative_scan(combine, (a_bt, u), dim=1, combine_mode="generic")
         h_seq = scanned[1]
     return h_seq, h_seq[:, -1]
 
 
 def _lru_scan_naive(a, u, h0):
-    """Naive Python for-loop reference; used as fallback if the parallel
-    scan raises on complex tensors."""
+    """Naive Python for-loop; fallback if parallel scan raises on complex."""
     Bsz, T, H = u.shape
-    if h0 is None:
-        h = torch.zeros(Bsz, H, dtype=u.dtype, device=u.device)
-    else:
-        h = h0
+    h = torch.zeros(Bsz, H, dtype=u.dtype, device=u.device) if h0 is None else h0
     outs = []
     for t in range(T):
         h = a * h + u[:, t]
         outs.append(h)
-    h_seq = torch.stack(outs, dim=1)
-    return h_seq, h
+    return torch.stack(outs, dim=1), h
 
 
 def _lru_scan(a, u, h0):
@@ -109,30 +98,18 @@ class _LRULayer(nn.Module):
     def __init__(self, input_size, hidden_size, bias=True, kind_B="dense",
                  kind_C="dense", r_min=0.0, r_max=1.0, max_phase=2 * math.pi):
         super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.kind_B = kind_B
-        self.kind_C = kind_C
-
-        # Orvieto-2023 eigenvalue reparameterization so that at init
-        # |a_i| ~ U[r_min, r_max] and arg(a_i) ~ U[0, max_phase].
-        u1 = torch.rand(hidden_size)
-        u2 = torch.rand(hidden_size)
-        nu_init = torch.log(
-            -0.5 * torch.log(u1 * (r_max ** 2 - r_min ** 2) + r_min ** 2 + 1e-8)
-        )
-        theta_init = torch.log(max_phase * u2 + 1e-8)
-        self.nu = nn.Parameter(nu_init)
-        self.theta = nn.Parameter(theta_init)
-
-        # Real and imaginary parts of the complex B and C are separate
-        # real linear maps. Structuring them independently keeps make_linear
-        # happy (it's real-valued) and lets C_re/C_im share the same kind.
+        self.input_size, self.hidden_size = input_size, hidden_size
+        self.kind_B, self.kind_C = kind_B, kind_C
+        # Orvieto-2023 reparam: |a_i| ~ U[r_min, r_max], arg(a_i) ~ U[0, max_phase].
+        u1, u2 = torch.rand(hidden_size), torch.rand(hidden_size)
+        self.nu = nn.Parameter(torch.log(
+            -0.5 * torch.log(u1 * (r_max ** 2 - r_min ** 2) + r_min ** 2 + 1e-8)))
+        self.theta = nn.Parameter(torch.log(max_phase * u2 + 1e-8))
+        # B and C: real/imag halves of the complex projections via make_linear.
         self.B_re = make_linear(kind_B, input_size, hidden_size, bias=bias)
         self.B_im = make_linear(kind_B, input_size, hidden_size, bias=bias)
         self.C_re = make_linear(kind_C, hidden_size, hidden_size, bias=False)
         self.C_im = make_linear(kind_C, hidden_size, hidden_size, bias=False)
-
         if bias:
             self.out_bias = nn.Parameter(torch.zeros(hidden_size))
         else:
@@ -170,25 +147,15 @@ class _LRULayer(nn.Module):
 class LRU(nn.Module):
     """Stacked, optionally bidirectional LRU matching nn.GRU's forward contract.
 
-    Parameters:
-        input_size, hidden_size: feature dims.
-        num_layers: stack depth (each stack element has D=1 or 2 directions).
-        bias: include output bias on each layer.
-        batch_first: if True, I/O are (B, T, *); else (T, B, *).
-        dropout: applied on output of each layer except the last.
-        bidirectional: if True, run a second independent layer on the
-            time-reversed input and concat along the feature axis.
-        kind: shorthand that sets both kind_B and kind_C.
-        kind_B, kind_C: make_linear kinds for the input and output projections.
-        r_min, r_max, max_phase: eigenvalue init distribution.
+    Args mirror nn.GRU (input_size, hidden_size, num_layers, bias, batch_first,
+    dropout, bidirectional) plus: kind / kind_B / kind_C route through
+    make_linear; r_min, r_max, max_phase control eigenvalue init.
 
     forward(input, h_0=None):
-        input: (T, B, input_size) or (B, T, input_size) depending on batch_first.
-        h_0: (num_layers * D, B, hidden_size) real, optional (lifted to complex
-             with zero imaginary part internally). If None, zero state is used.
-        output: (T, B, D * hidden_size) or (B, T, D * hidden_size).
-        h_n: (num_layers * D, B, hidden_size) real — this is real(h_T), so the
-             imaginary state component is discarded.
+        input: (T, B, input_size) or (B, T, input_size) per batch_first.
+        h_0: (num_layers * D, B, hidden_size) real, optional (lifted to
+             complex with zero imag). None -> zero state.
+        output: (T, B, D*H) or (B, T, D*H); h_n: (L*D, B, H) = real(h_T).
     """
 
     def __init__(self, input_size, hidden_size, num_layers=1, bias=True,
