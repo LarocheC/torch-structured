@@ -39,24 +39,28 @@ A single `uv pip install .` (or `uv pip install -e .`) that just works — with 
 
 ### Out of Scope
 
-- Pre-compiled wheel distribution — library value unproven
-- C++/CUDA kernel code changes — only build plumbing
+- Pre-compiled wheel distribution — library value unproven (superseded by v1.2 Triton path: no wheels needed)
+- ~~C++/CUDA kernel code changes — only build plumbing~~ (lifted in v1.2: Triton port replaces kernels)
 - Rewriting or updating experiment code — removing, not fixing
+- `_flashmm` MathDx kernel port — Triton cannot replicate MathDx tensor-core tuning; drop instead
 
-## Current Milestone: v1.1 Repository Cleanup
+## Current Milestone: v1.2 Triton Migration
 
-**Goal:** Strip the repo down to the core `torch_butterfly` library, removing all legacy and experiment code to prepare for CI/CD pipeline publishing.
+**Goal:** Port C++/CUDA kernels to Triton so `uv pip install torch-structured` works with zero compilation step on any CUDA-capable machine.
 
 **Target features:**
-- Remove legacy `butterfly/` package and `tests_old/` (fully replaced by `torch_butterfly/`)
-- Remove experiment directories (`cnn/`, `convolution/`, `transformer/`, `learning_transforms/`, `gumbel-sinkhorn/`)
-- Remove dead assets (`fairseq/` submodule, `data/`, `ray_template.sh`)
-- Clean up build artifacts (`build/`, `torch_butterfly.egg-info/`) and add to `.gitignore`
-- Ensure the stripped repo still builds and tests pass
+- Triton dispatch infrastructure (runtime selection between Triton and CUDA paths)
+- Port `diag_mult` to Triton
+- Port `hadamard` to Triton
+- Port butterfly forward kernel to Triton
+- Port butterfly backward + autograd to Triton (replaces C++ `torch::autograd::Function`)
+- Deprecate and remove `csrc/`, `setup.py` build shim, and MANIFEST.in
+
+**Migration strategy:** Parallel paths — Triton kernels live alongside existing CUDA during migration; a runtime flag selects one. Lets the milestone ship incrementally and roll back per-kernel. `butterfly_multiply_torch` (pure-PyTorch reference) is preserved as the correctness oracle for every ported kernel.
 
 ## Context
 
-Shipped v1.0 (build modernization) and v1.1 (repo cleanup). Repo now contains only core library: `torch_butterfly/`, `csrc/`, `tests/`, build files. All legacy code, experiments, and dead assets removed. README modernized. Ready for CI/CD pipeline integration.
+Shipped v1.0 (build modernization) and v1.1 (repo cleanup). Starting v1.2 (Triton migration) to eliminate the install-time compile step that remains a friction point even with the modern pyproject.toml: users still need a CUDA toolchain and ~5-minute build. End state is a wheel-free, source-only Python package that JIT-compiles Triton kernels on first use.
 
 ## Constraints
 
@@ -98,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 — Phase 3 complete, v1.1 milestone done*
+*Last updated: 2026-05-26 — v1.2 Triton Migration milestone started*

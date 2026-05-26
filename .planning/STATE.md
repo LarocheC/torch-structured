@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Repository Cleanup
-status: verifying
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-04-03T09:32:36.011Z"
-last_activity: 2026-04-03
+milestone: v1.2
+milestone_name: Triton Migration
+status: planning
+last_updated: "2026-05-26T19:12:11.229Z"
+last_activity: 2026-05-26
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 
 ## Current Position
 
-Phase: 03
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-19 - Completed quick task 260419-v4b: promoted LRU + make_linear into torch_structured public API (v0.4.0)
-
-Progress: [====================] 100% v1.0 | [..........] 0% v1.1
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-26 — Milestone v1.2 started
 
 ## Performance Metrics
 
