@@ -172,13 +172,42 @@
 | CLEAN-02 | Phase 3 | Complete |
 | CLEAN-03 | Phase 3 | Complete |
 | CLEAN-04 | Phase 3 | Complete |
+| DISP-01 | Phase 4 | Pending |
+| DISP-02 | Phase 4 | Pending |
+| DISP-03 | Phase 4 | Pending |
+| DISP-04 | Phase 4 | Pending |
+| DISP-05 | Phase 4 | Pending |
+| COMPAT-05 | Phase 4 | Pending |
+| TRI-05 | Phase 4 | Pending |
+| TRI-06 | Phase 4 | Pending |
+| TRI-07 | Phase 4 | Pending |
+| TEST-05 | Phase 4 | Pending |
+| TRI-01 | Phase 5 | Pending |
+| TRI-02 | Phase 6 | Pending |
+| TRI-03 | Phase 7 | Pending |
+| TRI-04 | Phase 8 | Pending |
+| TEST-01 | Phase 9 | Pending |
+| TEST-02 | Phase 9 | Pending |
+| TEST-03 | Phase 9 | Pending |
+| TEST-04 | Phase 9 | Pending |
+| TEST-06 | Phase 9 | Pending |
+| COMPAT-01 | Phase 9 | Pending |
+| COMPAT-02 | Phase 9 | Pending |
+| COMPAT-03 | Phase 9 | Pending |
+| COMPAT-04 | Phase 9 | Pending |
+| COMPAT-06 | Phase 9 | Pending |
+| DEPR-01 | Phase 10 | Pending |
+| DEPR-02 | Phase 10 | Pending |
+| DEPR-03 | Phase 10 | Pending |
+| DEPR-04 | Phase 10 | Pending |
+| DEPR-05 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.0 requirements: 19 total, 19 complete
 - v1.1 requirements: 12 total, 12 complete
-- v1.2 requirements: 28 total, 0 complete, 0 mapped (roadmapper next)
-- Unmapped: 28 (v1.2 — pending roadmap)
+- v1.2 requirements: 28 total, 0 complete, 28 mapped (Phases 4-10)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-05-26 — v1.2 Triton Migration requirements added (28 new across DISP/TRI/TEST/COMPAT/DEPR)*
+*Last updated: 2026-05-26 — v1.2 Triton Migration roadmap created; 28 requirements mapped across Phases 4-10*

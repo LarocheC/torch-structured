@@ -3,37 +3,37 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
 status: planning
-last_updated: "2026-05-26T19:12:11.229Z"
+last_updated: "2026-05-26T20:00:00.000Z"
 last_activity: 2026-05-26
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 18
+  completed_plans: 4
+  percent: 22
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-05-26)
 
-**Core value:** A single `uv pip install .` that just works -- with CUDA support when available
-**Current focus:** Phase 03 — strip-and-verify
+**Core value:** A single `uv pip install .` that just works -- with CUDA support when available (v1.2 evolves this to wheel-free Triton JIT)
+**Current focus:** Phase 4 -- Triton Dispatch Infrastructure & Foundational Decisions
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-26 — Milestone v1.2 started
+Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- not yet started
+Plan: -- (planning pending via `/gsd-plan-phase 4`)
+Status: Roadmap complete; ready for phase planning
+Last activity: 2026-05-26 -- v1.2 roadmap created, 28 requirements mapped across 7 phases (Phase 4-10)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2 (v1.0)
+- Total plans completed: 4 (v1.0 + v1.1)
 - Average duration: -
 - Total execution time: unknown
 
@@ -43,10 +43,12 @@ Last activity: 2026-05-26 — Milestone v1.2 started
 |-------|-------|-------|----------|
 | 1 | 1 | - | - |
 | 2 | 1 | - | - |
+| 3 | 2 | 286s | 143s |
 
 **Recent Trend:**
 
 - v1.0 shipped cleanly in 2 phases, 2 plans
+- v1.1 shipped in 1 phase, 2 plans (Phase 3)
 
 | Phase 03 P01 | 46s | 2 tasks | 185 files |
 | Phase 03 P02 | 240s | 2 tasks | 2 files |
@@ -62,10 +64,16 @@ Recent decisions affecting current work:
 - [v1.1]: All 12 removals are independent; single phase sufficient at coarse granularity
 - [Phase 03]: Single commit for all 11 legacy removals -- atomic cleanup
 - [Phase 03]: Pre-existing test failures (4/45) documented but not fixed -- out of scope for cleanup
+- [v1.2 roadmap]: Derived 7 phases (Phase 4-10) from 28 v1.2 requirements; ordering matches all four research streams (infra -> diag_mult -> hadamard -> butterfly fw -> butterfly bw -> integration -> deprecation)
+- [v1.2 roadmap]: Phase 4 carries more design weight than its name suggests -- complex64 layout + `triton_op` pattern propagate to every later phase
+- [v1.2 roadmap]: Phase 8 (backward) is highest-risk; 3-layer gradcheck is a phase entry gate; allotted 2 plans for fp32 and complex64 separately
+- [v1.2 roadmap]: Phase 10 does deprecation only -- csrc/ deletion deferred to a future milestone (TRI-FUT-04) per the 2-release deprecation cadence
+- [v1.2 roadmap]: Existing CUDA path stays working through v1.2; parallel paths during migration
+- [v1.2 roadmap]: TEST-04 perf gate (>=60% of CUDA) is a Phase 9 entry criterion, not a Phase 8 blocker
 
 ### Pending Todos
 
-None yet.
+- Plan Phase 4 via `/gsd-plan-phase 4`
 
 ### Blockers/Concerns
 
@@ -82,6 +90,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-03T09:29:52.780Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-05-26T20:00:00.000Z
+Stopped at: v1.2 roadmap complete; awaiting `/gsd-plan-phase 4`
 Resume file: None
