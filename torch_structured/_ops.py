@@ -79,6 +79,21 @@ def _has_cuda_legacy() -> bool:
     return hasattr(torch.ops.torch_structured, "butterfly_multiply")
 
 
+def _has_cuda_legacy_diag_mult() -> bool:
+    """Per-op honest probe (CHECKER B3) for the legacy ``_diag_mult_cuda`` extension.
+
+    Symmetric to ``_has_cuda_legacy()`` but checks the pybind11 ``_diag_mult_cuda``
+    extension (D-22). Returns the ``HAS_CUDA_LEGACY_DIAG_MULT`` sentinel from
+    ``_cuda_legacy/diag_mult.py`` — True iff the ``.so`` was built and the
+    top-of-module try-import succeeded. Never raises; returns a clean bool.
+    """
+    try:
+        from torch_structured._cuda_legacy.diag_mult import HAS_CUDA_LEGACY_DIAG_MULT
+        return HAS_CUDA_LEGACY_DIAG_MULT
+    except ImportError:
+        return False
+
+
 def _has_triton_kernel(op_name: str) -> bool:
     """Per-op probe — True only when a real Triton kernel ships for ``op_name``.
 
@@ -99,6 +114,21 @@ def _has_triton_kernel(op_name: str) -> bool:
     return hasattr(mod, op_name)
 
 
+def _has_any_triton_kernel() -> bool:
+    """Per-op honest probe (CHECKER B3): True iff ANY per-op Triton kernel is installed.
+
+    Lights up progressively across phases (5: diag_mult, 6: hadamard_transform,
+    7: butterfly_multiply). The widened predicate used by ``_resolve()`` Step 1
+    so the ``auto`` and ``triton`` branches reach ``actual="triton"`` as soon
+    as the first per-op Triton kernel ships — without requiring butterfly
+    (Phase 7) to land first. Never raises; returns a clean bool.
+    """
+    for op_name in ("butterfly_multiply", "diag_mult", "hadamard_transform"):
+        if _has_triton_kernel(op_name):
+            return True
+    return False
+
+
 def _resolve(name: str) -> str:
     """Pick a backend, bind module-level names, return the **actual** chosen name.
 
@@ -117,18 +147,18 @@ def _resolve(name: str) -> str:
         raise ValueError(f"Unknown backend {name!r}; expected triton|cuda|torch|auto")
 
     # ── Step 1: pick actual backend ─────────────────────────────────────
-    # Honest per-op probe (CHECKER B3): in Phase 4 the _triton package is empty,
-    # so _has_triton_kernel(*) is always False and `auto`/`triton` never resolve
-    # to "triton". Phase 5 lights up the first real Triton kernel.
+    # Honest per-op probe (CHECKER B3): _has_any_triton_kernel() is True iff at
+    # least one per-op Triton kernel ships. In Phase 5 only diag_mult lights up;
+    # Phase 6 adds hadamard_transform; Phase 7 adds butterfly_multiply.
     if name == "auto":
-        if _has_triton_kernel("butterfly_multiply") and torch.cuda.is_available():
+        if _has_any_triton_kernel() and torch.cuda.is_available():
             actual = "triton"
         elif _has_cuda_legacy():
             actual = "cuda"
         else:
             actual = "torch"
     elif name == "triton":
-        if _has_triton_kernel("butterfly_multiply") and torch.cuda.is_available():
+        if _has_any_triton_kernel() and torch.cuda.is_available():
             actual = "triton"
         elif _has_cuda_legacy():
             actual = "cuda"
@@ -161,11 +191,18 @@ def _resolve(name: str) -> str:
     if actual == "triton":
         # In Phase 4 this branch is unreachable (no Triton kernels yet); Phase 5+
         # will route through `from torch_structured._triton.butterfly.op import
-        # butterfly_multiply` here.
-        from torch_structured._triton.butterfly.op import (  # type: ignore[import-not-found]
-            butterfly_multiply as _triton_bm,
-        )
-        butterfly_multiply = _triton_bm
+        # butterfly_multiply` here. Phase 7 lands the butterfly Triton kernel.
+        if _has_triton_kernel("butterfly_multiply"):
+            from torch_structured._triton.butterfly.op import (  # type: ignore[import-not-found]
+                butterfly_multiply as _triton_bm,
+            )
+            butterfly_multiply = _triton_bm
+        elif _has_cuda_legacy():
+            from torch_structured._cuda_legacy import butterfly_multiply as _cuda_bm
+            butterfly_multiply = _cuda_bm
+        else:
+            from torch_structured._torch_ref.butterfly import butterfly_multiply_torch
+            butterfly_multiply = butterfly_multiply_torch
     elif actual == "cuda":
         from torch_structured._cuda_legacy import butterfly_multiply as _cuda_bm
         butterfly_multiply = _cuda_bm
@@ -173,7 +210,35 @@ def _resolve(name: str) -> str:
         from torch_structured._torch_ref.butterfly import butterfly_multiply_torch
         butterfly_multiply = butterfly_multiply_torch
 
-    # hadamard_transform / diag_mult: Phase 6 / Phase 5 populate; stay None for now.
+    # diag_mult per-op binding (D-22 — asymmetric fallback). The coarse `actual`
+    # signals the user's intent; the per-op binding uses ``_has_triton_kernel`` /
+    # ``_has_cuda_legacy_diag_mult`` to honor honest availability. ``_diag_mult_backend``
+    # is local — the only consumer is the log.info line below; the module-level
+    # ``_BACKEND`` global stays coarse per D-22a recommendation A.
+    if actual == "triton" and _has_triton_kernel("diag_mult"):
+        from torch_structured._triton.diag_mult.op import diag_mult as _triton_dm
+        diag_mult = _triton_dm
+        _diag_mult_backend = "triton"
+    elif actual == "cuda" and _has_cuda_legacy_diag_mult():
+        from torch_structured._cuda_legacy.diag_mult import diag_mult as _cuda_dm
+        diag_mult = _cuda_dm
+        _diag_mult_backend = "cuda"
+    else:
+        from torch_structured._torch_ref.diag_mult import diag_mult as _torch_dm
+        diag_mult = _torch_dm
+        _diag_mult_backend = "torch"
+        if actual == "cuda":
+            log.warning(
+                "set_backend('cuda') requested but _diag_mult_cuda not built; "
+                "falling back to torch_ref for diag_mult (D-22)"
+            )
+
+    log.info(
+        "torch_structured: per-op bindings: butterfly_multiply=%s, diag_mult=%s",
+        actual, _diag_mult_backend,
+    )
+
+    # hadamard_transform: Phase 6 populates; stays None for now.
 
     # ── Step 3: D-08 heads-up log ──────────────────────────────────────
     # Per CHECKER B3 tightened condition: emit ONLY when the ACTUAL binding is
@@ -211,94 +276,3 @@ def set_backend(name: str) -> str:
 _initial = os.environ.get("TORCH_STRUCTURED_BACKEND", "auto")
 _resolve(_initial)
 log.info("torch_structured: backend=%s (import)", _BACKEND)
-
-
-# ─── Phase 4 demonstrator op (deleted at start of Phase 5 per D-13) ──────
-#
-# Demonstrator op (D-13, D-14): proves the triton_op + register_autograd +
-# register_fake pipeline survives torch.compile(fullgraph=True) and gradcheck.
-# Deleted at the start of Phase 5 once diag_mult exercises the same pattern on
-# a real kernel. The register_fake decorator below is the literal 260419-p27
-# fix — DO NOT remove (RESEARCH.md Pitfall 1).
-
-
-@triton.jit
-def _demo_identity_kernel(in_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
-    """Identity copy kernel — no-op proof-of-concept for the wrapper pattern."""
-    pid = tl.program_id(axis=0)
-    block_start = pid * BLOCK_SIZE
-    offsets = block_start + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < n_elements
-    x = tl.load(in_ptr + offsets, mask=mask)
-    tl.store(out_ptr + offsets, x, mask=mask)
-
-
-@triton_op("torch_structured::_demo_identity", mutates_args={})
-def _demo_identity_op(x: torch.Tensor) -> torch.Tensor:
-    """No-op identity demonstrator: exercises the triton_op + wrap_triton path.
-
-    Handles complex64 via the view_as_real/view_as_complex wrapper boundary so
-    that Phase 7's critical path (TRI-06, D-01) is proven sound before Phase 7
-    starts. See 04-COMPLEX-LAYOUT.md for the canonical pattern.
-
-    Parameters:
-        x: input tensor; dtype may be a real float type or torch.complex64.
-
-    Returns:
-        Element-wise copy of ``x`` with the same dtype, shape, and device.
-    """
-    is_complex = x.is_complex()
-    if is_complex:
-        # Pitfall 3 (04-RESEARCH.md): view_as_real on a non-contiguous complex
-        # tensor inherits the transposed/strided pattern; the kernel would
-        # read garbage. Force contiguity at the wrapper boundary.
-        assert x.is_contiguous(), (
-            "complex input must be contiguous before view_as_real "
-            "(Pitfall 3 / 04-COMPLEX-LAYOUT.md)"
-        )
-        x_work = torch.view_as_real(x)  # zero-copy trailing-2 real view
-    else:
-        x_work = x
-    out_work = torch.empty_like(x_work)
-    n_elements = x_work.numel()
-    # BLOCK_SIZE is a constexpr passed at the call site (no @triton.heuristics:
-    # wrap_triton rejects Heuristics-wrapped kernels in PyTorch 2.6+, only
-    # plain @triton.jit or @triton.autotune are accepted). We pick a fixed
-    # power-of-2 BLOCK_SIZE — the demonstrator is a single-pass identity copy,
-    # autotuning is not needed.
-    BLOCK_SIZE = 1024
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-    wrap_triton(_demo_identity_kernel)[grid](x_work, out_work, n_elements, BLOCK_SIZE)
-    if is_complex:
-        # view_as_complex requires the last dim to be size 2 with stride 1 and
-        # all other strides to be even — `out_work = empty_like(x_work)` is
-        # already contiguous, so the .contiguous() call is a no-op here but
-        # documents the invariant for future kernel changes.
-        return torch.view_as_complex(out_work.contiguous())
-    return out_work
-
-
-def _setup_context(ctx, inputs, output):
-    """Identity op needs nothing saved for backward."""
-    # (x,) = inputs  # noqa: F841 — kept here for shape reference
-    pass
-
-
-def _backward(ctx, grad):
-    """Identity op gradient is the input gradient pass-through (d(out)/d(in) = 1)."""
-    return grad
-
-
-_demo_identity_op.register_autograd(_backward, setup_context=_setup_context)
-
-
-@_demo_identity_op.register_fake
-def _(x: torch.Tensor) -> torch.Tensor:
-    """Meta kernel — THE 260419-p27 fix.
-
-    Without this, ``torch.compile``'s dynamo fake-tensor trace cannot infer
-    the output shape/dtype/device of ``_demo_identity_op`` and raises:
-    ``"The tensor has a non-zero number of elements, but its data is not
-    allocated yet"``. With this, dynamo traces through cleanly.
-    """
-    return torch.empty_like(x)
