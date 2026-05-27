@@ -1,61 +1,34 @@
-import numpy as np
-import torch
+"""Back-compat shim — Phase 6 (TRI-02).
 
-use_hadamard_transform_cuda = True
-try:
-    from torch_structured import _hadamard_cuda as hadamard_cuda
-except ImportError:
-    use_hadamard_transform_cuda = False
+Per D-33d, the pure-PyTorch reference ``hadamard_transform_torch`` has been
+relocated to ``torch_structured._torch_ref.hadamard`` (the cross-cutting oracle
+home). This module re-exports it so that the existing import surface in
+``tests/structured/test_hadamard.py:8`` and ``tests/structured/test_imports.py:6-13``
+continues to work without edits.
 
-from scipy.linalg import hadamard
+The legacy autograd Function class, the unnormalized-CUDA-wrapper, and the
+module-level conditional binding were deleted per D-33 / D-33a / D-33b —
+``torch_structured._ops.hadamard_transform`` now handles dispatch + autograd
+plumbing via ``register_autograd`` (Task 3). The legacy try-import was also
+deleted per D-33c — the new ``_cuda_legacy/hadamard.py`` (Task 2) owns the
+honest-probe pattern.
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+This module additionally exposes a ``hadamard_transform`` callable for
+back-compat (D-33d) that re-reads ``torch_structured._ops.hadamard_transform``
+on every call (D-05 attribute access — rebind-safe across ``set_backend()``).
+"""
+import torch_structured  # noqa: F401 — needed so the shim below can attribute-access _ops
+
+from torch_structured._torch_ref.hadamard import hadamard_transform_torch  # noqa: F401 — back-compat shim per D-33d
 
 
-def hadamard_transform_torch(u, normalize=False):
-    """Multiply H_n @ u where H_n is the Hadamard matrix of dimension n x n.
-    n must be a power of 2.
-    Parameters:
-        u: Tensor of shape (..., n)
-        normalize: if True, divide the result by 2^{m/2} where m = log_2(n).
-    Returns:
-        product: Tensor of shape (..., n)
+def hadamard_transform(*args, **kwargs):
+    """Back-compat shim — delegates to ``torch_structured._ops.hadamard_transform``.
+
+    Preserves the historical ``structured.hadamard.hadamard_transform`` import
+    surface used by ``tests/structured/test_imports.py:6-13`` while honoring the
+    D-05 attribute-access contract (rebind-safe across ``set_backend()`` — the
+    binding is re-read on every call, so backend switches take effect
+    transparently).
     """
-    batch_size, n = u.shape
-    m = int(np.log2(n))
-    assert n == 1 << m, 'n must be a power of 2'
-    x = u[..., np.newaxis]
-    for d in range(m)[::-1]:
-        x = torch.cat((x[..., ::2, :] + x[..., 1::2, :], x[..., ::2, :] - x[..., 1::2, :]), dim=-1)
-    return x.squeeze(-2) / 2**(m / 2) if normalize else x.squeeze(-2)
-
-
-class HadamardTransformCuda(torch.autograd.Function):
-    '''The unnormalized Hadamard transform (i.e. without dividing by sqrt(2))
-    '''
-    @staticmethod
-    def forward(ctx, u):
-        return hadamard_cuda.hadamard_transform(u)
-
-    @staticmethod
-    def backward(ctx, grad):
-        return HadamardTransformCuda.apply(grad)
-
-
-def hadamard_transform_cuda(u, normalize=False):
-    """Multiply H_n @ u where H_n is the Hadamard matrix of dimension n x n.
-    n must be a power of 2.
-    Parameters:
-        u: Tensor of shape (..., n)
-        normalize: if True, divide the result by 2^{m/2} where m = log_2(n).
-    Returns:
-        product: Tensor of shape (..., n)
-    """
-    _, n = u.shape
-    m = int(np.log2(n))
-    assert n == 1 << m, 'n must be a power of 2'
-    output = HadamardTransformCuda.apply(u)
-    return output / 2**(m / 2) if normalize else output
-
-
-hadamard_transform = hadamard_transform_cuda if use_hadamard_transform_cuda else hadamard_transform_torch
+    return torch_structured._ops.hadamard_transform(*args, **kwargs)
