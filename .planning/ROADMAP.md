@@ -121,7 +121,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md -- _torch_ref + _triton/diag_mult + _cuda_legacy/diag_mult + _ops.py per-op resolver + krylov.py refactor + tests/test_diag_mult.py + conftest widening + demonstrator deletion
+- [x] 05-01-PLAN.md -- _torch_ref + _triton/diag_mult + _cuda_legacy/diag_mult + _ops.py per-op resolver + krylov.py refactor + tests/test_diag_mult.py + conftest widening + demonstrator deletion
 
 ### Phase 6: hadamard Triton Port
 **Goal**: `hadamard` runs on Triton as a forward-only self-inverse kernel, proving the two-pass mixed-radix shared-memory pattern in Triton without atomics or complex
