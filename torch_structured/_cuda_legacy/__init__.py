@@ -13,5 +13,6 @@ may absorb the loader into _cuda_legacy/ when butterfly/__init__.py collapses
 """
 from .butterfly import butterfly_multiply  # noqa: F401
 from .diag_mult import diag_mult  # noqa: F401  — may raise RuntimeError if .so absent
+from .hadamard import hadamard_transform  # noqa: F401  — may raise RuntimeError if .so absent
 
-__all__ = ["butterfly_multiply", "diag_mult"]
+__all__ = ["butterfly_multiply", "diag_mult", "hadamard_transform"]
