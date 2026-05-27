@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
-status: executing
-stopped_at: Phase 4 Plan 04-01 complete; Plan 04-02 pending
-last_updated: "2026-05-27T09:30:00.000Z"
-last_activity: 2026-05-27 -- Phase 04 Plan 01 executed (dispatch infrastructure + companion docs)
+status: in_progress
+stopped_at: Phase 4 Plan 04-02 executed; Phase 4 complete (both plans done)
+last_updated: "2026-05-27T11:00:00.000Z"
+last_activity: 2026-05-27 -- Plan 04-02 executed (demonstrator op + test_dispatch + CI cache)
 progress:
   total_phases: 10
-  completed_phases: 3
-  total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- in progress
-Plan: 04-02 (demonstrator op + test_dispatch + CI cache) -- pending
-Status: Plan 04-01 complete; Plan 04-02 ready to execute
-Last activity: 2026-05-27 -- Plan 04-01 executed (dispatch infrastructure + companion docs)
+Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- both plans complete
+Plan: 04-02 (demonstrator op + test_dispatch + CI cache) -- complete
+Status: Phase 4 complete; Phase 5 (diag_mult Triton kernel) ready
+Last activity: 2026-05-27 -- Plan 04-02 executed (3 tasks, 6 files: _ops.py extended, _triton placeholder, conftest, test_dispatch, CI workflow, deferred-items)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Last activity: 2026-05-27 -- Plan 04-01 executed (dispatch infrastructure + comp
 | Phase 03 P01 | 46s | 2 tasks | 185 files |
 | Phase 03 P02 | 240s | 2 tasks | 2 files |
 | Phase 04 P01 | ~60min | 3 tasks | 10 files (7 created, 3 modified) |
+| Phase 04 P02 | ~90min | 3 tasks | 6 files (5 created, 1 modified) |
 
 ## Accumulated Context
 
@@ -78,10 +79,15 @@ Recent decisions affecting current work:
 - [Phase 04 Plan 01]: D-08 INFO heads-up dormant in Phase 4 (no triton binding possible); first exercised when Phase 5 ships diag_mult on a host that also has the legacy .so
 - [Phase 04 Plan 01]: T-04-01 mitigation in place — _resolve() validates against {triton,cuda,torch,auto} and raises ValueError; no dynamic import of env-var value
 - [Phase 04 Plan 01]: torch>=2.6 floor (D-11/COMPAT-05) committed in both [build-system].requires and [project].dependencies
+- [Phase 04 Plan 02]: Canonical triton_op + wrap_triton + register_autograd + register_fake skeleton landed in _ops.py._demo_identity_op — template for Phase 5+ kernel ports
+- [Phase 04 Plan 02]: @triton.heuristics dropped from kernel decorator stack — wrap_triton in PyTorch >=2.6 only accepts plain @triton.jit or @triton.autotune (Rule 1 auto-fix during execution)
+- [Phase 04 Plan 02]: Complex64 wrapper-boundary (view_as_real/view_as_complex) implemented unconditionally in the demonstrator — Phase 7 inherits a working reference
+- [Phase 04 Plan 02]: 260419-p27 dynamo bug acceptance gate PASS — register_fake on the demonstrator op prevents "data is not allocated yet" under FakeTensorMode tracing
+- [Phase 04 Plan 02]: CI workflow shipped with actions/cache@v4 keyed on (os, python, torch, hashFiles('_triton/**/*.py')) — Pitfall 6 (github.sha keying) avoided
 
 ### Pending Todos
 
-- Execute Plan 04-02 (demonstrator op + test_dispatch.py + CI cache)
+- Begin Phase 5 (diag_mult Triton kernel) — Plan 5 will delete _demo_identity_op (per D-13) and extend conftest backend params to ["torch", "triton"]
 
 ### Blockers/Concerns
 
@@ -98,6 +104,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-27T09:30:00.000Z
-Stopped at: Phase 4 Plan 04-01 executed; Plan 04-02 pending
-Resume file: .planning/phases/04-triton-dispatch-infrastructure-foundational-decisions/04-02-PLAN.md
+Last session: 2026-05-27T11:00:00.000Z
+Stopped at: Phase 4 complete (Plan 04-01 + 04-02 both shipped); Phase 5 (diag_mult Triton kernel) ready
+Resume file: None — next session begins Phase 5 planning
