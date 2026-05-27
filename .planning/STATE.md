@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
-status: in_progress
-stopped_at: Phase 4 Plan 04-02 executed; Phase 4 complete (both plans done)
-last_updated: "2026-05-27T11:00:00.000Z"
-last_activity: 2026-05-27 -- Plan 04-02 executed (demonstrator op + test_dispatch + CI cache)
+status: completed
+stopped_at: Phase 4 complete (Plan 04-01 + 04-02 both shipped); Phase 5 (diag_mult Triton kernel) ready
+last_updated: "2026-05-27T08:56:06.443Z"
+last_activity: 2026-05-27 -- Phase 04 marked complete
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 3
-  completed_plans: 3
-  percent: 100
+  completed_plans: 2
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- both plans complete
+Phase: 04 — COMPLETE
 Plan: 04-02 (demonstrator op + test_dispatch + CI cache) -- complete
-Status: Phase 4 complete; Phase 5 (diag_mult Triton kernel) ready
-Last activity: 2026-05-27 -- Plan 04-02 executed (3 tasks, 6 files: _ops.py extended, _triton placeholder, conftest, test_dispatch, CI workflow, deferred-items)
+Status: Phase 04 complete
+Last activity: 2026-05-27 -- Phase 04 marked complete
 
 ## Performance Metrics
 
