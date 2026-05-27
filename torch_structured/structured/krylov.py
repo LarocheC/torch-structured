@@ -13,15 +13,11 @@ import functools
 import numpy as np
 
 import torch
+import torch_structured
 from torch.nn import functional as F
 
 from ._compat import krylov_construct
 from ._compat import complex_mult, conjugate
-
-try:
-    from torch_structured import _diag_mult_cuda as diag_mult_cuda
-except (ImportError, RuntimeError) as e:
-    diag_mult_cuda = None
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -322,26 +318,19 @@ def subdiag_mult_slow_fast(subdiag_A, subdiag_B, G, H, x):
     return ((x @ K_H) @ K_G.transpose(1, 2)).sum(dim=0)
 
 
-class CycleDownMultCuda(torch.autograd.Function):
-    '''Cycle v down and do pointwise multiplication with subdiag.
-    '''
-    @staticmethod
-    def forward(ctx, subdiag, v):
-        ctx.save_for_backward(subdiag, v)
-        return diag_mult_cuda.cycle_mult(subdiag, v, 0, -1)
-
-    @staticmethod
-    def backward(ctx, grad):
-        subdiag, v = ctx.saved_tensors
-        return diag_mult_cuda.cycle_mult(grad, v, 0, -1).sum(dim=0), diag_mult_cuda.cycle_mult(subdiag, grad, 1, 1)
-
-
-cycle_down_mult = CycleDownMultCuda.apply
-
-
 def subdiag_linear_map_cuda(subdiag, upper_right_corner=0.0):
+    """Build a closure over ``v`` that applies the diag_mult primitive (D-24/D-25).
+
+    Phase 5 rewrite: the previous custom ``torch.autograd.Function`` consumer
+    was deleted; this function now routes through the single dispatch point
+    ``torch_structured._ops.diag_mult`` per the D-05 attribute-access contract
+    (so ``set_backend()`` rebindings take effect for already-loaded lambdas).
+    The ``(shift_subdiag, shift_v) = (0, -1)`` argument pair preserves the
+    original semantics. Autograd flows through ``register_autograd`` on the
+    Triton op (Pitfall 6 broadcast-sum handled inside its ``_backward``).
+    """
     subdiag_extended = torch.cat((torch.tensor([upper_right_corner], dtype=subdiag.dtype, device=subdiag.device), subdiag))
-    return lambda v: cycle_down_mult(subdiag_extended, v)
+    return lambda v: torch_structured._ops.diag_mult(subdiag_extended, v, 0, -1)
 
 
 def subdiag_mult_cuda(subdiag_A, subdiag_B, G, H, x, corner_A=0.0, corner_B=0.0):
