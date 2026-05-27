@@ -148,7 +148,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- _triton/butterfly + @triton_op fp32 kernel with multi-launch 3-stage register-resident tile + IS_COMPLEX pre-wiring (gated) + register_autograd two-input backward via _torch_ref + register_fake with load-bearing defaults + tests/test_butterfly_triton.py (smoke + slow comprehensive + fp64 gradcheck + small-N fallback)
+- [x] 07-01-PLAN.md -- _triton/butterfly + @triton_op fp32 kernel with multi-launch 3-stage register-resident tile + IS_COMPLEX pre-wiring (gated) + register_autograd two-input backward via _torch_ref + register_fake with load-bearing defaults + tests/test_butterfly_triton.py (smoke + slow comprehensive + fp64 gradcheck + small-N fallback)
 - [ ] 07-02-PLAN.md -- light up IS_COMPLEX=True 4-FMA branch + remove fp32-only wrapper gate + complex64 + Wirtinger gradcheck + unitary U U* = I test (PITFALLS §1 acceptance gate) + perf baseline JSON to 07-BASELINE.json per D-43b
 
 ### Phase 8: butterfly_multiply Backward (Triton)
