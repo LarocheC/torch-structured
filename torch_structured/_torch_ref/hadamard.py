@@ -33,15 +33,24 @@ def hadamard_transform_torch(u, normalize=False):
     """Multiply H_n @ u where H_n is the Hadamard matrix of dimension n x n.
     n must be a power of 2.
     Parameters:
-        u: Tensor of shape (batch_size, n)
+        u: Tensor of shape (..., n) where n is a power of 2
         normalize: if True, divide the result by 2^{m/2} where m = log_2(n).
     Returns:
-        product: Tensor of shape (batch_size, n)
+        product: Tensor of shape (..., n) — same shape as input
     """
-    batch_size, n = u.shape
+    # Rank-N handling per 06-VERIFICATION.md gap closure (SC#2 strict reading):
+    # the wrapper at _triton/hadamard_transform/op.py:104 advertises (*batch, n).
+    # The interleaved-butterfly loop body uses `...` indexing and is rank-N-correct
+    # already; reshape to rank-2 minimizes diff vs the verbatim-relocation lineage
+    # from structured/hadamard.py:15-30 (preserves np.log2 + torch.cat semantics).
+    original_shape = u.shape
+    n = u.shape[-1]
+    u = u.reshape(-1, n)
+    batch_size = u.shape[0]
     m = int(np.log2(n))
     assert n == 1 << m, 'n must be a power of 2'
     x = u[..., np.newaxis]
     for d in range(m)[::-1]:
         x = torch.cat((x[..., ::2, :] + x[..., 1::2, :], x[..., ::2, :] - x[..., 1::2, :]), dim=-1)
-    return x.squeeze(-2) / 2**(m / 2) if normalize else x.squeeze(-2)
+    out = x.squeeze(-2) / 2**(m / 2) if normalize else x.squeeze(-2)
+    return out.reshape(original_shape)
