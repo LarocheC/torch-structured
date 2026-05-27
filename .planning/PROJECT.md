@@ -49,9 +49,9 @@ A single `uv pip install .` (or `uv pip install -e .`) that just works — with 
 **Goal:** Port C++/CUDA kernels to Triton so `uv pip install torch-structured` works with zero compilation step on any CUDA-capable machine.
 
 **Target features:**
-- Triton dispatch infrastructure (runtime selection between Triton and CUDA paths)
-- Port `diag_mult` to Triton
-- Port `hadamard` to Triton
+- ✓ Triton dispatch infrastructure (Phase 4 complete)
+- ✓ Port `diag_mult` to Triton (Phase 5 complete — 2026-05-27)
+- Port `hadamard` to Triton (Phase 6 next)
 - Port butterfly forward kernel to Triton
 - Port butterfly backward + autograd to Triton (replaces C++ `torch::autograd::Function`)
 - Deprecate and remove `csrc/`, `setup.py` build shim, and MANIFEST.in
@@ -102,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 — v1.2 Triton Migration milestone started*
+*Last updated: 2026-05-27 — Phase 5 (diag_mult Triton Port) complete; Phase 6 (hadamard) next*
