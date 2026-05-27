@@ -107,21 +107,33 @@ def _has_cuda_legacy_hadamard() -> bool:
         return False
 
 
+# Phase 7 name-asymmetry map: the op name (``butterfly_multiply``) doesn't
+# match the Triton-package name (``butterfly``). Phase 5 + Phase 6 ops are
+# symmetric (their package name equals their op name) and fall through the
+# ``.get(op_name, op_name)`` default in ``_has_triton_kernel``.
+_TRITON_PACKAGE_NAMES = {
+    "butterfly_multiply": "butterfly",
+}
+
+
 def _has_triton_kernel(op_name: str) -> bool:
     """Per-op probe — True only when a real Triton kernel ships for ``op_name``.
 
-    Probes ``torch_structured._triton.<op_name>.op`` and checks that
-    ``<op_name>`` is defined on it. In Phase 4 the ``_triton/`` package is
-    empty (Plan 04-02 Task 1 creates the placeholder package; no submodules),
-    so this returns False for every op. Phase 5 lights up
-    ``_has_triton_kernel("diag_mult")`` when the first real kernel ships.
+    Probes ``torch_structured._triton.<package>.op`` (where ``<package>`` is
+    derived from ``op_name`` — see ``_TRITON_PACKAGE_NAMES`` above for the
+    name-asymmetry map) and checks that ``<op_name>`` is defined on it.
+
+    Phase 5 lights up ``_has_triton_kernel("diag_mult")`` (package: ``diag_mult``).
+    Phase 6 lights up ``_has_triton_kernel("hadamard_transform")`` (package: ``hadamard_transform``).
+    Phase 7 lights up ``_has_triton_kernel("butterfly_multiply")`` (package: ``butterfly``).
 
     Distinguishing this from ``_has_triton()`` is per CHECKER B3: the resolver
     must be honest about backend availability so it never silently lies about
     binding to Triton.
     """
+    package_name = _TRITON_PACKAGE_NAMES.get(op_name, op_name)
     try:
-        mod = importlib.import_module(f"torch_structured._triton.{op_name}.op")
+        mod = importlib.import_module(f"torch_structured._triton.{package_name}.op")
     except (ImportError, AttributeError):
         return False
     return hasattr(mod, op_name)
