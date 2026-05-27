@@ -137,3 +137,90 @@ def test_hadamard_module_consumer(backend):
         f"consumer mismatch (backend={backend}): "
         f"max err = {(out - expected).abs().max()}"
     )
+
+
+def test_hadamard_eager_fp32_rank3(backend):
+    """Rank-3 forward correctness — closes SC#2 strict-reading gap (06-VERIFICATION.md).
+
+    The Triton wrapper at _triton/hadamard_transform/op.py:104 advertises
+    shape (*batch, n); this test exercises a rank-3 input through both
+    backends and asserts the result equals the rank-2 reshape baseline
+    element-wise.
+    """
+    n = 16  # log_n = 4 — small enough for tight tolerances, large enough to fire on sign bugs
+    u = torch.randn(3, 2, n, device="cuda", dtype=torch.float32)
+    out = torch_structured._ops.hadamard_transform(u, normalize=False)
+    assert out.shape == (3, 2, n), (
+        f"rank-3 shape (backend={backend}): expected (3, 2, {n}), got {tuple(out.shape)}"
+    )
+    # The rank-N path MUST equal the rank-2 reshape baseline element-wise.
+    expected = torch_structured._ops.hadamard_transform(
+        u.reshape(-1, n), normalize=False
+    ).reshape(3, 2, n)
+    assert torch.allclose(out, expected, rtol=1e-5, atol=1e-6), (
+        f"rank-3 vs reshape baseline mismatch (backend={backend}): "
+        f"max err = {(out - expected).abs().max()}"
+    )
+    # Also cross-check against the _torch_ref oracle on the rank-3 input directly.
+    ref_out = hadamard_ref(u)
+    assert torch.allclose(out, ref_out, rtol=1e-5, atol=1e-6), (
+        f"rank-3 vs oracle mismatch (backend={backend}): "
+        f"max err = {(out - ref_out).abs().max()}"
+    )
+
+
+def test_hadamard_backward_rank3(backend):
+    """Rank-3 backward succeeds — closes SC#2 strict-reading gap.
+
+    Before the fix this raised ``ValueError: too many values to unpack
+    (expected 2)`` on BOTH backends — on triton because
+    _triton/hadamard_transform/op.py:168 delegates backward through
+    _torch_ref.hadamard.hadamard_transform_torch; on torch because the
+    forward itself was rank-2-only.
+    """
+    n = 16
+    u = torch.randn(3, 2, n, device="cuda", dtype=torch.float32, requires_grad=True)
+    out = torch_structured._ops.hadamard_transform(u, normalize=False)
+    (grad_u,) = torch.autograd.grad(out.sum(), u)
+    assert grad_u.shape == (3, 2, n), (
+        f"rank-3 grad shape (backend={backend}): "
+        f"expected (3, 2, {n}), got {tuple(grad_u.shape)}"
+    )
+    # Numerical correctness: cross-check via the rank-2 reshape baseline.
+    u2 = u.detach().reshape(-1, n).requires_grad_(True)
+    out2 = torch_structured._ops.hadamard_transform(u2, normalize=False)
+    (grad_u2,) = torch.autograd.grad(out2.sum(), u2)
+    expected_grad = grad_u2.reshape(3, 2, n)
+    assert torch.allclose(grad_u, expected_grad, rtol=1e-5, atol=1e-6), (
+        f"rank-3 grad vs reshape baseline mismatch (backend={backend}): "
+        f"max err = {(grad_u - expected_grad).abs().max()}"
+    )
+
+
+def test_hadamard_self_inverse_rank3(backend):
+    """H o H = N * I (unnormalized) or I (normalized) on a rank-3 input.
+
+    Direct ROADMAP SC#2 "any input shape" coverage — the existing
+    test_hadamard_self_inverse is rank-2-only; this lifts the contract
+    to (*batch, n) for both backends.
+    """
+    n = 16
+    u = torch.randn(3, 2, n, device="cuda", dtype=torch.float32)
+    # Unnormalized: H @ (H @ u) == N * u
+    twice = torch_structured._ops.hadamard_transform(
+        torch_structured._ops.hadamard_transform(u, normalize=False),
+        normalize=False,
+    )
+    assert torch.allclose(twice, n * u, atol=1e-3), (
+        f"rank-3 self-inverse unnormalized fail (backend={backend}): "
+        f"max err = {(twice - n * u).abs().max()}"
+    )
+    # Normalized: H @ (H @ u) == u
+    twice_norm = torch_structured._ops.hadamard_transform(
+        torch_structured._ops.hadamard_transform(u, normalize=True),
+        normalize=True,
+    )
+    assert torch.allclose(twice_norm, u, atol=1e-4), (
+        f"rank-3 self-inverse normalized fail (backend={backend}): "
+        f"max err = {(twice_norm - u).abs().max()}"
+    )
