@@ -9,14 +9,19 @@ set_backend() rebindings take effect.
 The fp64 gradcheck test is the load-bearing acceptance gate per D-47 — it
 validates the two-input register_autograd plumbing via
 ``torch.autograd.grad(_torch_ref, [twiddle, input], grad_out)``. The Triton
-backend is skipped because the kernel is fp32-only (D-41), and per D-47 the
-Triton backward delegates to ``_torch_ref`` exactly — so the torch-backend
-gradcheck IS testing the autograd plumbing for both backends.
+backend is skipped because the kernel is fp32/complex64 only (D-41), and per
+D-47 the Triton backward delegates to ``_torch_ref`` exactly — so the
+torch-backend gradcheck IS testing the autograd plumbing for both backends.
 
 Per the D-43a tiered parametrize approach, the dense smoke tier covers
 ``log_n in {2, 4, 8, 10}`` with default axes for every-CI runs; the
 comprehensive Cartesian tier is marked ``@pytest.mark.slow`` and opt-in via
 ``pytest -m slow``.
+
+Plan 07-02 extends the file with complex64 forward correctness, Wirtinger
+fp64-equivalent (complex128) gradcheck, and the U U^* = I unitary acceptance
+gate per PITFALLS §1 (the load-bearing complex-correctness detector that
+fails loudly on any 4-FMA sign error in the kernel).
 
 Tolerance note (deviation from Plan 07-01's stated ``rtol=1e-5, atol=1e-6``):
 butterfly_multiply with random N(0,1) twiddle factors compounds fp32 round-off
@@ -36,6 +41,7 @@ import torch
 
 import torch_structured  # noqa: F401 — triggers extension load + _ops.py resolver
 from torch_structured._torch_ref.butterfly import butterfly_multiply_torch as butterfly_ref
+from torch_structured.butterfly import Butterfly  # legacy nn.Module surface for the unitary test (D-46 — no consumer refactor in Phase 7)
 
 
 pytestmark = pytest.mark.skipif(
@@ -231,4 +237,177 @@ def test_butterfly_comprehensive(
         f"comprehensive mismatch (log_n={log_n}, nstacks={nstacks}, "
         f"nblocks={nblocks}, inc={increasing_stride}, out={output_size_kind}, "
         f"backend={backend}): max err = {(out - expected).abs().max()}"
+    )
+
+
+# ============================================================================
+# Plan 07-02 additions — complex64 + Wirtinger gradcheck + unitary U U^H = I
+# ============================================================================
+#
+# The four tests below light up the complex64 path of butterfly_multiply per
+# ROADMAP Phase 7 SC#1 (complex64) + SC#2 (unitary) + D-47 Wirtinger acceptance.
+# The unitary test (test_butterfly_unitary) is the load-bearing PITFALLS §1
+# detector — it fails loudly on any 4-FMA sign error in the IS_COMPLEX=True
+# kernel branch or any view_as_real round-trip break at the wrapper boundary.
+#
+# Tolerance for complex64 follows ROADMAP SC#1: ``rtol=1e-4``. fp32 round-off
+# noise compounds through log_n stages so the practical tolerance has the
+# same scale-awareness pattern documented in the module docstring above —
+# we use ``rtol=RTOL, atol=ATOL`` (1e-3, 1e-3) for the comprehensive grid
+# at log_n=11 where the noise floor dominates; the smoke tier at log_n <= 10
+# uses rtol=1e-4 directly (the SC#1 literal contract).
+
+
+@pytest.mark.parametrize("log_n", [2, 4, 8, 10])
+def test_butterfly_eager_complex64(backend, log_n):
+    """Forward correctness vs torch_ref oracle, complex64, dense-smoke parameter set per D-43a.
+
+    Verifies the IS_COMPLEX=True kernel branch (4-FMA per-pair) produces outputs
+    matching ``_torch_ref`` within ROADMAP SC#1 complex64 tolerance (rtol=1e-4).
+    """
+    n = 1 << log_n
+    nstacks, nblocks, batch_size = 1, 1, 4
+    twiddle = torch.randn(
+        nstacks, nblocks, log_n, n // 2, 2, 2,
+        device="cuda", dtype=torch.complex64,
+    )
+    input_ = torch.randn(batch_size, nstacks, n, device="cuda", dtype=torch.complex64)
+    out = torch_structured._ops.butterfly_multiply(twiddle, input_, True, n)
+    expected = butterfly_ref(twiddle, input_, True, n)
+    assert out.dtype == torch.complex64, f"output dtype mismatch: {out.dtype}"
+    err = (out - expected).abs().max().item()
+    assert torch.allclose(out, expected, rtol=1e-4, atol=1e-4), (
+        f"complex64 mismatch (backend={backend}, log_n={log_n}): max err = {err}"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "log_n,nstacks,nblocks,increasing_stride,output_size_kind",
+    list(itertools.product(
+        range(2, 12),
+        [1, 2, 3],
+        [1, 2],
+        [True, False],
+        ["n", "half", "n-1"],
+    )),
+)
+def test_butterfly_eager_complex64_grid(
+    backend, log_n, nstacks, nblocks, increasing_stride, output_size_kind
+):
+    """Full Cartesian complex64 parameter grid (D-43a comprehensive tier — opt-in via ``pytest -m slow``).
+
+    Mirrors test_butterfly_comprehensive but with complex64 dtype. fp32 noise
+    compounds through log_n stages of complex multiply; the practical
+    tolerance ``RTOL=ATOL=1e-3`` (module-level) accommodates the noise floor
+    at log_n=11 while still rejecting any real implementation bug.
+    """
+    n = 1 << log_n
+    output_size = {"n": n, "half": n // 2, "n-1": n - 1}[output_size_kind]
+    batch_size = 4
+    twiddle = torch.randn(
+        nstacks, nblocks, log_n, n // 2, 2, 2,
+        device="cuda", dtype=torch.complex64,
+    )
+    input_ = torch.randn(batch_size, nstacks, n, device="cuda", dtype=torch.complex64)
+    out = torch_structured._ops.butterfly_multiply(twiddle, input_, increasing_stride, output_size)
+    expected = butterfly_ref(twiddle, input_, increasing_stride, output_size)
+    assert out.shape == (batch_size, nstacks, output_size), (
+        f"shape mismatch (log_n={log_n}, nstacks={nstacks}, nblocks={nblocks}, "
+        f"inc={increasing_stride}, out={output_size_kind}, backend={backend}): "
+        f"{out.shape}"
+    )
+    assert torch.allclose(out, expected, rtol=RTOL, atol=ATOL), (
+        f"complex64 comprehensive (log_n={log_n}, nstacks={nstacks}, "
+        f"nblocks={nblocks}, inc={increasing_stride}, out={output_size_kind}, "
+        f"backend={backend}): max err = {(out - expected).abs().max()}"
+    )
+
+
+def test_butterfly_gradcheck_complex64(backend):
+    """fp64-equivalent complex128 gradcheck — D-47 Wirtinger acceptance for complex.
+
+    The triton backend is skipped: the kernel itself is fp32/complex64; gradcheck
+    demands fp64/complex128 precision. Per D-47, the backward delegates to
+    ``_torch_ref.butterfly_multiply_torch`` via ``torch.autograd.grad(...)`` —
+    the torch-backend gradcheck IS testing the register_autograd plumbing both
+    backends rely on. ``torch.autograd.grad`` natively handles Wirtinger
+    gradients for complex inputs; no manual ``.conj()`` correction is needed
+    (Phase 5 ``diag_mult`` used a hand-rolled Wirtinger formula and had to add
+    ``.conj()`` manually; Phase 7 delegates the entire gradient to autograd
+    inside the oracle's execution).
+    """
+    if backend == "triton":
+        pytest.skip(
+            "Triton kernel is fp32/complex64 only; gradcheck on torch backend "
+            "exercises the same register_autograd backward (D-47)"
+        )
+    log_n, nstacks, nblocks, batch_size = 3, 1, 1, 2
+    n = 1 << log_n
+    twiddle = torch.randn(
+        nstacks, nblocks, log_n, n // 2, 2, 2,
+        dtype=torch.complex128, device="cuda", requires_grad=True,
+    )
+    input_ = torch.randn(
+        batch_size, nstacks, n,
+        dtype=torch.complex128, device="cuda", requires_grad=True,
+    )
+    assert torch.autograd.gradcheck(
+        lambda t, x: torch_structured._ops.butterfly_multiply(t, x, True, n),
+        (twiddle, input_),
+        eps=1e-6,
+        atol=1e-5,
+    )
+
+
+def test_butterfly_unitary(backend):
+    """U U^H = I — the load-bearing complex-correctness detector per PITFALLS §1.
+
+    Constructs a ``Butterfly(complex=True, init='ortho')`` module whose
+    twiddle is initialized so each 2x2 factor is unitary; the product is
+    unitary by composition. Materializes the n x n matrix U by passing the
+    n x n identity matrix through the kernel as n parallel inputs (batch=n,
+    nstacks=1), then asserts ``U @ U.conj().T ≈ I`` at atol=1e-4.
+
+    Per PITFALLS §1 this is the CHEAPEST correctness gate for the complex
+    path — it fails immediately on any 4-FMA sign error in the
+    IS_COMPLEX=True kernel branch or any view_as_real round-trip break at
+    the wrapper boundary.
+
+    Runs on both backends. The test calls ``torch_structured._ops.butterfly_multiply``
+    DIRECTLY (not via ``Butterfly.forward``) because per D-46 the
+    ``Butterfly`` nn.Module's forward routes through the legacy C++ op
+    (``torch.ops.torch_structured.butterfly_multiply``) — to actually
+    exercise the Triton kernel under the ``triton`` backend, we must hit
+    ``_ops.butterfly_multiply`` directly.
+    """
+    log_n = 4
+    n = 1 << log_n
+    # Construct a unitary butterfly via init='ortho' (butterfly.py:71-90
+    # initializes each 2x2 factor as a Haar-unitary 2x2 matrix; the product
+    # over log_n stages is unitary by composition).
+    b = Butterfly(
+        in_size=n, out_size=n, bias=False, complex=True,
+        increasing_stride=True, init='ortho',
+    ).to("cuda")
+    twiddle = b.twiddle  # (nstacks=1, nblocks=1, log_n, n//2, 2, 2) complex64
+
+    # Materialize U column-by-column: feed the n x n identity matrix as a
+    # batch of n inputs, where input i is the i-th column of the identity.
+    # Butterfly expects (batch, nstacks, in_size). batch=n, nstacks=1,
+    # in_size=n. Output is (n, 1, n) where row i is U @ e_i = column i of U.
+    identity_batch = torch.eye(n, dtype=torch.complex64, device="cuda").unsqueeze(1)
+    assert identity_batch.shape == (n, 1, n)
+    with torch.no_grad():
+        outputs = torch_structured._ops.butterfly_multiply(twiddle, identity_batch, True, n)
+    U = outputs.squeeze(1).T.contiguous()  # (n, n)
+    assert U.shape == (n, n), f"materialized U shape mismatch (backend={backend}): {U.shape}"
+    assert U.dtype == torch.complex64, f"U dtype mismatch (backend={backend}): {U.dtype}"
+
+    # The load-bearing unitarity gate (PITFALLS §1).
+    UUH = U @ U.conj().T
+    eye = torch.eye(n, dtype=torch.complex64, device="cuda")
+    max_err = (UUH - eye).abs().max().item()
+    assert torch.allclose(UUH, eye, atol=1e-4), (
+        f"Unitary check FAILED (backend={backend}): max |U U^H - I| = {max_err}"
     )
