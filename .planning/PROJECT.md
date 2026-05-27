@@ -102,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-27 — Phase 6 (hadamard Triton Port) complete; Phase 7 (butterfly_multiply forward) next*
+*Last updated: 2026-05-27 — Phase 7 (butterfly_multiply forward, Triton) complete; Phase 8 (butterfly_multiply backward, Triton) next*
