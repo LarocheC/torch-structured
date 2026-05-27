@@ -108,7 +108,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md -- _torch_ref/ + _cuda_legacy/ + _ops.py dispatch + set_backend + torch>=2.6 + 04-COMPLEX-LAYOUT.md + 04-DEPRECATION-PLAN.md (completed 2026-05-27)
-- [ ] 04-02-PLAN.md -- demonstrator op + tests/test_dispatch.py + CI cache
+- [x] 04-02-PLAN.md -- demonstrator op + tests/test_dispatch.py + CI cache (completed 2026-05-27)
 
 ### Phase 5: diag_mult Triton Port
 **Goal**: `diag_mult` runs on Triton for fp32 and complex64 forward+backward, validating that the Phase 4 dispatch and autograd plumbing carry a real kernel end-to-end
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 1. Build System Foundation | v1.0 | 1/1 | Complete | 2026-04-02 |
 | 2. Extension Loading | v1.0 | 1/1 | Complete | 2026-04-02 |
 | 3. Strip and Verify | v1.1 | 2/2 | Complete | 2026-04-03 |
-| 4. Triton Dispatch Infrastructure | v1.2 | 0/2 | Not started | - |
+| 4. Triton Dispatch Infrastructure | v1.2 | 2/2 | Complete | 2026-05-27 |
 | 5. diag_mult Triton Port | v1.2 | 0/1 | Not started | - |
 | 6. hadamard Triton Port | v1.2 | 0/1 | Not started | - |
 | 7. butterfly Forward (Triton) | v1.2 | 0/2 | Not started | - |

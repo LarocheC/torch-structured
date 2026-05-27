@@ -44,6 +44,9 @@ import logging
 import os
 
 import torch
+import triton
+import triton.language as tl
+from torch.library import triton_op, wrap_triton
 
 log = logging.getLogger("torch_structured")
 
@@ -208,3 +211,94 @@ def set_backend(name: str) -> str:
 _initial = os.environ.get("TORCH_STRUCTURED_BACKEND", "auto")
 _resolve(_initial)
 log.info("torch_structured: backend=%s (import)", _BACKEND)
+
+
+# ─── Phase 4 demonstrator op (deleted at start of Phase 5 per D-13) ──────
+#
+# Demonstrator op (D-13, D-14): proves the triton_op + register_autograd +
+# register_fake pipeline survives torch.compile(fullgraph=True) and gradcheck.
+# Deleted at the start of Phase 5 once diag_mult exercises the same pattern on
+# a real kernel. The register_fake decorator below is the literal 260419-p27
+# fix — DO NOT remove (RESEARCH.md Pitfall 1).
+
+
+@triton.jit
+def _demo_identity_kernel(in_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    """Identity copy kernel — no-op proof-of-concept for the wrapper pattern."""
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    x = tl.load(in_ptr + offsets, mask=mask)
+    tl.store(out_ptr + offsets, x, mask=mask)
+
+
+@triton_op("torch_structured::_demo_identity", mutates_args={})
+def _demo_identity_op(x: torch.Tensor) -> torch.Tensor:
+    """No-op identity demonstrator: exercises the triton_op + wrap_triton path.
+
+    Handles complex64 via the view_as_real/view_as_complex wrapper boundary so
+    that Phase 7's critical path (TRI-06, D-01) is proven sound before Phase 7
+    starts. See 04-COMPLEX-LAYOUT.md for the canonical pattern.
+
+    Parameters:
+        x: input tensor; dtype may be a real float type or torch.complex64.
+
+    Returns:
+        Element-wise copy of ``x`` with the same dtype, shape, and device.
+    """
+    is_complex = x.is_complex()
+    if is_complex:
+        # Pitfall 3 (04-RESEARCH.md): view_as_real on a non-contiguous complex
+        # tensor inherits the transposed/strided pattern; the kernel would
+        # read garbage. Force contiguity at the wrapper boundary.
+        assert x.is_contiguous(), (
+            "complex input must be contiguous before view_as_real "
+            "(Pitfall 3 / 04-COMPLEX-LAYOUT.md)"
+        )
+        x_work = torch.view_as_real(x)  # zero-copy trailing-2 real view
+    else:
+        x_work = x
+    out_work = torch.empty_like(x_work)
+    n_elements = x_work.numel()
+    # BLOCK_SIZE is a constexpr passed at the call site (no @triton.heuristics:
+    # wrap_triton rejects Heuristics-wrapped kernels in PyTorch 2.6+, only
+    # plain @triton.jit or @triton.autotune are accepted). We pick a fixed
+    # power-of-2 BLOCK_SIZE — the demonstrator is a single-pass identity copy,
+    # autotuning is not needed.
+    BLOCK_SIZE = 1024
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    wrap_triton(_demo_identity_kernel)[grid](x_work, out_work, n_elements, BLOCK_SIZE)
+    if is_complex:
+        # view_as_complex requires the last dim to be size 2 with stride 1 and
+        # all other strides to be even — `out_work = empty_like(x_work)` is
+        # already contiguous, so the .contiguous() call is a no-op here but
+        # documents the invariant for future kernel changes.
+        return torch.view_as_complex(out_work.contiguous())
+    return out_work
+
+
+def _setup_context(ctx, inputs, output):
+    """Identity op needs nothing saved for backward."""
+    # (x,) = inputs  # noqa: F841 — kept here for shape reference
+    pass
+
+
+def _backward(ctx, grad):
+    """Identity op gradient is the input gradient pass-through (d(out)/d(in) = 1)."""
+    return grad
+
+
+_demo_identity_op.register_autograd(_backward, setup_context=_setup_context)
+
+
+@_demo_identity_op.register_fake
+def _(x: torch.Tensor) -> torch.Tensor:
+    """Meta kernel — THE 260419-p27 fix.
+
+    Without this, ``torch.compile``'s dynamo fake-tensor trace cannot infer
+    the output shape/dtype/device of ``_demo_identity_op`` and raises:
+    ``"The tensor has a non-zero number of elements, but its data is not
+    allocated yet"``. With this, dynamo traces through cleanly.
+    """
+    return torch.empty_like(x)

@@ -1,0 +1,48 @@
+# Phase 4 CI workflow: persist Triton JIT cache (~/.triton/cache) across runs
+# so PRs don't pay first-call compile cost on every push (Pitfall 5, TEST-05).
+#
+# Cache key composition (per D-16 + Pitfall 6):
+#   - runner.os         — Linux/macOS/Windows have different PTX
+#   - python-version    — Triton compiles different bytecode per Python ABI
+#   - torch-version     — Triton is bundled with torch; bumping torch invalidates
+#   - hashFiles(...)    — source-hash invalidates when kernel sources change
+# NOT keyed on github.sha: every commit would invalidate (0% hit rate).
+#
+# In Phase 4 the _triton/ directory has only __init__.py (empty placeholder),
+# so hashFiles returns a stable empty-glob hash. Phase 5 adds the first real
+# kernel and the cache lights up.
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: '3.11'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolve torch version
+        id: torch-version
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.6'
+          echo "TORCH_VERSION=$(python -c 'import torch; print(torch.__version__)')" >> "$GITHUB_ENV"
+
+      - name: Cache Triton JIT artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/.triton/cache
+          key: triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-${{ hashFiles('torch_structured/_triton/**/*.py') }}
+          restore-keys: |
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
+
+      - run: pip install -e .[test]
+
+      - run: pytest tests/ -x

@@ -75,7 +75,7 @@
 - [ ] **TRI-02**: `hadamard` runs on Triton (self-inverse, forward kernel only, fp32)
 - [ ] **TRI-03**: `butterfly_multiply` forward runs on Triton (fp32 + complex64, all `increasing_stride`/`output_size`/`nstacks`/`nblocks` combinations)
 - [ ] **TRI-04**: `butterfly_multiply` backward runs on Triton with fp32 scratch accumulator for atomic adds (no direct bf16/fp16 atomicAdd)
-- [ ] **TRI-05**: All Triton kernels registered via `torch.library.triton_op` + `register_autograd` + `wrap_triton` (not `torch.autograd.Function`)
+- [x] **TRI-05**: All Triton kernels registered via `torch.library.triton_op` + `register_autograd` + `wrap_triton` (not `torch.autograd.Function`)
 - [x] **TRI-06**: Complex64 implemented via real/imag-split arithmetic, with the layout decision documented in Phase 1
 - [x] **TRI-07**: `butterfly_multiply_torch` remains as runtime fallback for CPU / no-Triton environments — not deleted
 
@@ -85,7 +85,7 @@
 - [ ] **TEST-02**: Backward correctness validated via `gradcheck` against `autograd.grad(_torch_fw, ...)` — not against the CUDA reference
 - [ ] **TEST-03**: Test suite parametrizes over `backend ∈ {triton, cuda, torch}` and asserts all three agree (within tolerance)
 - [ ] **TEST-04**: Butterfly Triton kernel achieves ≥60% of existing CUDA throughput on log_n ∈ {8, 9, 10, 11} via `triton.testing.do_bench`
-- [ ] **TEST-05**: CI persists `TRITON_CACHE_DIR` between runs so first-call JIT cost doesn't compound
+- [x] **TEST-05**: CI persists `TRITON_CACHE_DIR` between runs so first-call JIT cost doesn't compound
 - [ ] **TEST-06**: Existing test suite (`pytest tests/`) passes with `TORCH_STRUCTURED_BACKEND=triton` set
 
 ### Compatibility Constraints (COMPAT)
@@ -178,10 +178,10 @@
 | DISP-04 | Phase 4 | Complete |
 | DISP-05 | Phase 4 | Complete |
 | COMPAT-05 | Phase 4 | Complete |
-| TRI-05 | Phase 4 | Pending |
+| TRI-05 | Phase 4 | Complete |
 | TRI-06 | Phase 4 | Complete |
 | TRI-07 | Phase 4 | Complete |
-| TEST-05 | Phase 4 | Pending |
+| TEST-05 | Phase 4 | Complete |
 | TRI-01 | Phase 5 | Pending |
 | TRI-02 | Phase 6 | Pending |
 | TRI-03 | Phase 7 | Pending |
