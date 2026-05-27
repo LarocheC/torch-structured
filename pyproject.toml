@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "torch>=2.0", "ninja", "wheel"]
+requires = ["setuptools>=64", "torch>=2.6", "ninja", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,7 +22,7 @@ keywords = [
     "monarch",
 ]
 dependencies = [
-    "torch>=2.0",
+    "torch>=2.6",
     "numpy",
     "scipy",
     "einops",

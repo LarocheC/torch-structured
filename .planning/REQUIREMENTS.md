@@ -63,11 +63,11 @@
 
 ### Backend Dispatch Infrastructure (DISP)
 
-- [ ] **DISP-01**: User can select backend via `TORCH_STRUCTURED_BACKEND` env var (values: `triton`, `cuda`, `torch`, `auto`)
-- [ ] **DISP-02**: `auto` mode selects Triton if available → CUDA `.so` if loaded → pure-PyTorch fallback, in that order
-- [ ] **DISP-03**: Backend is selected once at import time via a single `torch_structured/_ops.py` dispatch module (no per-call branching)
-- [ ] **DISP-04**: User can call `torch_structured.set_backend("triton"|"cuda"|"torch")` from Python at runtime for tests
-- [ ] **DISP-05**: Library logs the selected backend at import time so users can verify which path ran
+- [x] **DISP-01**: User can select backend via `TORCH_STRUCTURED_BACKEND` env var (values: `triton`, `cuda`, `torch`, `auto`)
+- [x] **DISP-02**: `auto` mode selects Triton if available → CUDA `.so` if loaded → pure-PyTorch fallback, in that order
+- [x] **DISP-03**: Backend is selected once at import time via a single `torch_structured/_ops.py` dispatch module (no per-call branching)
+- [x] **DISP-04**: User can call `torch_structured.set_backend("triton"|"cuda"|"torch")` from Python at runtime for tests
+- [x] **DISP-05**: Library logs the selected backend at import time so users can verify which path ran
 
 ### Triton Kernel Ports (TRI)
 
@@ -76,8 +76,8 @@
 - [ ] **TRI-03**: `butterfly_multiply` forward runs on Triton (fp32 + complex64, all `increasing_stride`/`output_size`/`nstacks`/`nblocks` combinations)
 - [ ] **TRI-04**: `butterfly_multiply` backward runs on Triton with fp32 scratch accumulator for atomic adds (no direct bf16/fp16 atomicAdd)
 - [ ] **TRI-05**: All Triton kernels registered via `torch.library.triton_op` + `register_autograd` + `wrap_triton` (not `torch.autograd.Function`)
-- [ ] **TRI-06**: Complex64 implemented via real/imag-split arithmetic, with the layout decision documented in Phase 1
-- [ ] **TRI-07**: `butterfly_multiply_torch` remains as runtime fallback for CPU / no-Triton environments — not deleted
+- [x] **TRI-06**: Complex64 implemented via real/imag-split arithmetic, with the layout decision documented in Phase 1
+- [x] **TRI-07**: `butterfly_multiply_torch` remains as runtime fallback for CPU / no-Triton environments — not deleted
 
 ### Correctness & Performance Gates (TEST)
 
@@ -94,7 +94,7 @@
 - [ ] **COMPAT-02**: Twiddle parameter layout `(nstacks, nblocks, log_n, n/2, 2, 2)` unchanged — saved checkpoints from v1.0/v1.1 load without conversion
 - [ ] **COMPAT-03**: `make_linear` factory and `LRU` recurrent layer continue to work unchanged on the Triton backend
 - [ ] **COMPAT-04**: `torch.compile(model)` traces cleanly through Triton kernels (resolves dynamo fake-tensor bug from quick task 260419-p27)
-- [ ] **COMPAT-05**: PyTorch minimum bumped from `>=2.0` to `>=2.6` in `pyproject.toml`
+- [x] **COMPAT-05**: PyTorch minimum bumped from `>=2.0` to `>=2.6` in `pyproject.toml`
 - [ ] **COMPAT-06**: README documents that Triton path requires CC 8.0+ (Ampere+); Volta sm_70 and Turing sm_75 users pin to v1.1 or use the CUDA backend with self-built `.so`
 
 ### CUDA Deprecation Cadence (DEPR)
@@ -172,15 +172,15 @@
 | CLEAN-02 | Phase 3 | Complete |
 | CLEAN-03 | Phase 3 | Complete |
 | CLEAN-04 | Phase 3 | Complete |
-| DISP-01 | Phase 4 | Pending |
-| DISP-02 | Phase 4 | Pending |
-| DISP-03 | Phase 4 | Pending |
-| DISP-04 | Phase 4 | Pending |
-| DISP-05 | Phase 4 | Pending |
-| COMPAT-05 | Phase 4 | Pending |
+| DISP-01 | Phase 4 | Complete |
+| DISP-02 | Phase 4 | Complete |
+| DISP-03 | Phase 4 | Complete |
+| DISP-04 | Phase 4 | Complete |
+| DISP-05 | Phase 4 | Complete |
+| COMPAT-05 | Phase 4 | Complete |
 | TRI-05 | Phase 4 | Pending |
-| TRI-06 | Phase 4 | Pending |
-| TRI-07 | Phase 4 | Pending |
+| TRI-06 | Phase 4 | Complete |
+| TRI-07 | Phase 4 | Complete |
 | TEST-05 | Phase 4 | Pending |
 | TRI-01 | Phase 5 | Pending |
 | TRI-02 | Phase 6 | Pending |

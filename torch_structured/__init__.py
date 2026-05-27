@@ -32,6 +32,7 @@ from .butterfly import (
 )
 from .factory import make_linear
 from .recurrent import LRU
+from ._ops import set_backend  # noqa: F401
 
 __all__ = [
     'Butterfly',
@@ -41,5 +42,6 @@ __all__ = [
     'butterfly_multiply',
     'LRU',
     'make_linear',
+    'set_backend',
     '__version__',
 ]
