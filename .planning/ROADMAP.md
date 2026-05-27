@@ -134,7 +134,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 06-01-PLAN.md -- TBD
+- [ ] 06-01-PLAN.md -- _torch_ref/hadamard + _triton/hadamard_transform + _cuda_legacy/hadamard + _ops.py per-op resolver + structured/hadamard.py back-compat shim + fastfood.py refactor + conftest widening + tests/structured/test_hadamard_triton.py
 
 ### Phase 7: butterfly_multiply Forward (Triton)
 **Goal**: `butterfly_multiply` forward runs on Triton for fp32 and complex64 across every `(increasing_stride, output_size, nstacks, nblocks)` combination, while backward temporarily routes through the torch-reference via `register_autograd` so the phase ships before the heavy backward kernel
