@@ -107,8 +107,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md -- TBD
-- [ ] 04-02-PLAN.md -- TBD
+- [x] 04-01-PLAN.md -- _torch_ref/ + _cuda_legacy/ + _ops.py dispatch + set_backend + torch>=2.6 + 04-COMPLEX-LAYOUT.md + 04-DEPRECATION-PLAN.md (completed 2026-05-27)
+- [ ] 04-02-PLAN.md -- demonstrator op + tests/test_dispatch.py + CI cache
 
 ### Phase 5: diag_mult Triton Port
 **Goal**: `diag_mult` runs on Triton for fp32 and complex64 forward+backward, validating that the Phase 4 dispatch and autograd plumbing carry a real kernel end-to-end

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-05-27T06:20:47.629Z"
-last_activity: 2026-05-27 -- Phase 04 planning complete
+stopped_at: Phase 4 Plan 04-01 complete; Plan 04-02 pending
+last_updated: "2026-05-27T09:30:00.000Z"
+last_activity: 2026-05-27 -- Phase 04 Plan 01 executed (dispatch infrastructure + companion docs)
 progress:
   total_phases: 10
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- not yet started
-Plan: -- (planning pending via `/gsd-plan-phase 4`)
-Status: Ready to execute
-Last activity: 2026-05-27 -- Phase 04 planning complete
+Phase: 4 (Triton Dispatch Infrastructure & Foundational Decisions) -- in progress
+Plan: 04-02 (demonstrator op + test_dispatch + CI cache) -- pending
+Status: Plan 04-01 complete; Plan 04-02 ready to execute
+Last activity: 2026-05-27 -- Plan 04-01 executed (dispatch infrastructure + companion docs)
 
 ## Performance Metrics
 
@@ -45,14 +45,17 @@ Last activity: 2026-05-27 -- Phase 04 planning complete
 | 1 | 1 | - | - |
 | 2 | 1 | - | - |
 | 3 | 2 | 286s | 143s |
+| 4 | 1 (of 2) | ~60min | 60min |
 
 **Recent Trend:**
 
 - v1.0 shipped cleanly in 2 phases, 2 plans
 - v1.1 shipped in 1 phase, 2 plans (Phase 3)
+- v1.2 Phase 4 started 2026-05-27; Plan 04-01 executed (3 tasks, 10 files, dispatch + docs)
 
 | Phase 03 P01 | 46s | 2 tasks | 185 files |
 | Phase 03 P02 | 240s | 2 tasks | 2 files |
+| Phase 04 P01 | ~60min | 3 tasks | 10 files (7 created, 3 modified) |
 
 ## Accumulated Context
 
@@ -71,10 +74,14 @@ Recent decisions affecting current work:
 - [v1.2 roadmap]: Phase 10 does deprecation only -- csrc/ deletion deferred to a future milestone (TRI-FUT-04) per the 2-release deprecation cadence
 - [v1.2 roadmap]: Existing CUDA path stays working through v1.2; parallel paths during migration
 - [v1.2 roadmap]: TEST-04 perf gate (>=60% of CUDA) is a Phase 9 entry criterion, not a Phase 8 blocker
+- [Phase 04 Plan 01]: CHECKER B3 honest-resolver fix landed — _has_triton_kernel(op_name) per-op probe distinguishes "Triton importable" from "Triton kernel installed"; _BACKEND reflects actual binding, never requested name
+- [Phase 04 Plan 01]: D-08 INFO heads-up dormant in Phase 4 (no triton binding possible); first exercised when Phase 5 ships diag_mult on a host that also has the legacy .so
+- [Phase 04 Plan 01]: T-04-01 mitigation in place — _resolve() validates against {triton,cuda,torch,auto} and raises ValueError; no dynamic import of env-var value
+- [Phase 04 Plan 01]: torch>=2.6 floor (D-11/COMPAT-05) committed in both [build-system].requires and [project].dependencies
 
 ### Pending Todos
 
-- Plan Phase 4 via `/gsd-plan-phase 4`
+- Execute Plan 04-02 (demonstrator op + test_dispatch.py + CI cache)
 
 ### Blockers/Concerns
 
@@ -91,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-26T20:22:13.825Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-triton-dispatch-infrastructure-foundational-decisions/04-CONTEXT.md
+Last session: 2026-05-27T09:30:00.000Z
+Stopped at: Phase 4 Plan 04-01 executed; Plan 04-02 pending
+Resume file: .planning/phases/04-triton-dispatch-infrastructure-foundational-decisions/04-02-PLAN.md
