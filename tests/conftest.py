@@ -19,6 +19,18 @@ import pytest
 import torch_structured  # noqa: F401 — triggers extension load + _ops.py resolver
 
 
+def pytest_configure(config):
+    """Register custom markers to silence PytestUnknownMarkWarning.
+
+    The ``slow`` marker is used by ``tests/test_butterfly_triton.py`` (Phase
+    7 D-43a) to gate the comprehensive Cartesian tier behind ``pytest -m slow``.
+    """
+    config.addinivalue_line(
+        "markers",
+        "slow: opt-in comprehensive parameter grid (Phase 7 D-43a)",
+    )
+
+
 @pytest.fixture(params=["torch", "triton"])
 def backend(request):
     """Switch backend for the duration of a test, restore after."""
