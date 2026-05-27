@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
 status: completed
-stopped_at: Phase 4 complete (Plan 04-01 + 04-02 both shipped); Phase 5 (diag_mult Triton kernel) ready
-last_updated: "2026-05-27T08:56:06.443Z"
-last_activity: 2026-05-27 -- Phase 04 marked complete
+stopped_at: Phase 5 context gathered
+last_updated: "2026-05-27T11:07:45.515Z"
+last_activity: "2026-05-27 - Completed quick task 260527-flp: narrow CI workflow to test_dispatch.py only (Phase 4 follow-up)"
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 3
   completed_plans: 2
-  percent: 0
+  percent: 67
 ---
 
 # Project State
@@ -105,6 +105,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-27T11:00:00.000Z
-Stopped at: Phase 4 complete (Plan 04-01 + 04-02 both shipped); Phase 5 (diag_mult Triton kernel) ready
-Resume file: None — next session begins Phase 5 planning
+Last session: 2026-05-27T11:07:45.502Z
+Stopped at: Phase 5 context gathered
+Resume file: .planning/phases/05-diag-mult-triton-port/05-CONTEXT.md
