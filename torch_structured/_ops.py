@@ -94,6 +94,19 @@ def _has_cuda_legacy_diag_mult() -> bool:
         return False
 
 
+def _has_cuda_legacy_hadamard() -> bool:
+    """Per-op honest probe (CHECKER B3) for the legacy ``_hadamard_cuda`` extension.
+
+    Symmetric to ``_has_cuda_legacy_diag_mult()``; returns the ``HAS_CUDA_LEGACY_HADAMARD``
+    sentinel from ``_cuda_legacy/hadamard.py``. Never raises; returns a clean bool.
+    """
+    try:
+        from torch_structured._cuda_legacy.hadamard import HAS_CUDA_LEGACY_HADAMARD
+        return HAS_CUDA_LEGACY_HADAMARD
+    except ImportError:
+        return False
+
+
 def _has_triton_kernel(op_name: str) -> bool:
     """Per-op probe — True only when a real Triton kernel ships for ``op_name``.
 
@@ -233,12 +246,29 @@ def _resolve(name: str) -> str:
                 "falling back to torch_ref for diag_mult (D-22)"
             )
 
-    log.info(
-        "torch_structured: per-op bindings: butterfly_multiply=%s, diag_mult=%s",
-        actual, _diag_mult_backend,
-    )
+    # hadamard_transform per-op binding (D-22 / D-36 — same shape as diag_mult above).
+    if actual == "triton" and _has_triton_kernel("hadamard_transform"):
+        from torch_structured._triton.hadamard_transform.op import hadamard_transform as _triton_ht
+        hadamard_transform = _triton_ht
+        _hadamard_transform_backend = "triton"
+    elif actual == "cuda" and _has_cuda_legacy_hadamard():
+        from torch_structured._cuda_legacy.hadamard import hadamard_transform as _cuda_ht
+        hadamard_transform = _cuda_ht
+        _hadamard_transform_backend = "cuda"
+    else:
+        from torch_structured._torch_ref.hadamard import hadamard_transform_torch as _torch_ht
+        hadamard_transform = _torch_ht
+        _hadamard_transform_backend = "torch"
+        if actual == "cuda":
+            log.warning(
+                "set_backend('cuda') requested but _hadamard_cuda not built; "
+                "falling back to torch_ref for hadamard_transform (D-22)"
+            )
 
-    # hadamard_transform: Phase 6 populates; stays None for now.
+    log.info(
+        "torch_structured: per-op bindings: butterfly_multiply=%s, diag_mult=%s, hadamard_transform=%s",
+        actual, _diag_mult_backend, _hadamard_transform_backend,
+    )
 
     # ── Step 3: D-08 heads-up log ──────────────────────────────────────
     # Per CHECKER B3 tightened condition: emit ONLY when the ACTUAL binding is

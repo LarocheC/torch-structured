@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Triton Migration
 status: executing
 stopped_at: Phase 6 context gathered
-last_updated: "2026-05-27T16:10:09.311Z"
-last_activity: 2026-05-27 -- Phase 06 planning complete
+last_updated: "2026-05-27T16:13:23.388Z"
+last_activity: 2026-05-27 -- Phase 06 execution started
 progress:
   total_phases: 10
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A single `uv pip install .` that just works -- with CUDA support when available (v1.2 evolves this to wheel-free Triton JIT)
-**Current focus:** Phase 05 — diag_mult Triton Port
+**Current focus:** Phase 06 — hadamard-triton-port
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-27 -- Phase 06 planning complete
+Phase: 06 (hadamard-triton-port) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 06
+Last activity: 2026-05-27 -- Phase 06 execution started
 
 ## Performance Metrics
 
