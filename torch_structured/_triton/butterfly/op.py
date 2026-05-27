@@ -22,21 +22,18 @@ toggling (mirrors the verbatim oracle at ``_torch_ref/butterfly.py:22-32``
 verbatim) and ping-pongs between two output buffers to avoid in-place data
 dependencies between stage-group launches.
 
-Plan 07-01 ships the kernel signature with ``IS_COMPLEX: tl.constexpr`` already
-present and the wrapper ``view_as_real`` machinery in place, but the path is
-gated by:
-
-* Kernel-side: a ``tl.static_assert`` on ``IS_COMPLEX`` at function entry
-  rejects ``IS_COMPLEX=True`` JIT specializations (D-41a load-bearing
-  pre-wiring).
-* Wrapper-side: a precondition assert rejecting any dtype other than
-  fp32 at the boundary.
-
-Plan 07-02 removes **only these two gates** — zero kernel-signature refactor
-between plans. The 4-FMA complex multiply will be added inside the
-``if IS_COMPLEX:`` branch of the kernel body per
+Plan 07-02 lit up the complex64 path — view_as_real wrapper boundary actively
+routes complex64 to the IS_COMPLEX=True kernel branch implementing the 4-FMA
+per-pair multiply per
 ``.planning/phases/04-triton-dispatch-infrastructure-foundational-decisions/04-COMPLEX-LAYOUT.md``
-lines 58-76 verbatim.
+lines 58-76. The kernel signature is unchanged from Plan 07-01 per D-41a (zero
+kernel-signature refactor between plans); only the kernel-entry static_assert
+and the wrapper fp32-only assert were removed, and the ``if IS_COMPLEX:`` branch
+in the per-stage body was filled in with the 4-FMA template adapted for the
+butterfly's 2x2 matrix-vector multiply (four pairwise complex multiplies per
+pair: ``new = t00*cur + t01*partner`` for the lower side, ``new = t10*partner
++ t11*cur`` for the upper side; each scalar multiply is the canonical
+``(a + bi)(c + di) = (ac - bd) + (ad + bc)i`` 4-FMA pattern).
 
 Small-N fallback (D-42a): when ``log_n <= 1`` (n in {1, 2}), the wrapper bypasses
 the kernel entirely and delegates to ``_torch_ref.butterfly.butterfly_multiply_torch``
@@ -138,13 +135,18 @@ def _butterfly_kernel(
             + side_out * 2
             + side_in
 
-    For Plan 07-01 (fp32 only) the ``IS_COMPLEX=True`` branch is gated by
-    ``tl.static_assert``; Plan 07-02 lights it up via the 4-FMA template per
-    ``04-COMPLEX-LAYOUT.md:58-76``.
+    For ``IS_COMPLEX=True`` the kernel receives pointers into a ``view_as_real``
+    layout (each logical complex element is 2 consecutive floats — real then
+    imag). Per-row stride is ``2 * n`` (not ``n``); per-twiddle-entry stride
+    is ``2`` (so ``pf8 = pair_flat * 8`` replaces ``pf4 = pair_flat * 4``).
+    The per-stage multiply applies the canonical 4-FMA template from
+    ``04-COMPLEX-LAYOUT.md:58-76``: ``(a + bi)(c + di) = (ac - bd) + (ad + bc)i``
+    — applied per pairwise complex multiply inside the butterfly's
+    ``t00*cur + t01*partner`` (lower-side) and ``t10*partner + t11*cur``
+    (upper-side) formulas. ``t.l.where(is_lower, new_lower, new_upper)`` is
+    applied to ``_re`` and ``_im`` parts independently (the mask is on the
+    logical position, not the view_as_real position).
     """
-    # D-41a load-bearing gate. Plan 07-02 removes ONLY this single line.
-    tl.static_assert(not IS_COMPLEX, "complex64 lands in 07-02 (D-41a pre-wiring)")
-
     row_id = tl.program_id(axis=0)     # column-tile index within a row
     bn_id = tl.program_id(axis=1)      # (batch, nstack) row id (flattened)
 
@@ -157,24 +159,43 @@ def _butterfly_kernel(
     col_start = row_id * TILE_N
     pos = col_start + tile_offsets       # absolute column positions in the row
 
-    # Row base offset (fp32 path: row stride = n; complex path would double
-    # via view_as_real — gated off in 07-01).
-    row_base = bn_id * n
-
-    # Twiddle stride math. Twiddle shape (last-fastest, row-major) is
-    # (nstacks, nblocks, log_n, n // 2, 2, 2) = numel per-stack
-    # = nblocks * log_n * (n // 2) * 4 = nblocks * log_n * 2 * n.
-    twiddle_stack_stride = nblocks * LOG_N * 2 * n
-    twiddle_block_stride = LOG_N * 2 * n
-    twiddle_stage_stride = 2 * n  # (n // 2) * 4
+    # Row / twiddle stride math. For the fp32 (real) path the row stride is
+    # ``n`` and each twiddle entry occupies 1 float. For the complex64 path the
+    # row stride is ``2 * n`` and each twiddle entry occupies 2 floats (re, im),
+    # consistent with the wrapper's ``torch.view_as_real`` boundary translation
+    # per ``04-COMPLEX-LAYOUT.md`` lines 33-50. We compute both unconditionally
+    # — the constexpr branch below selects which to use.
+    if IS_COMPLEX:
+        # view_as_real layout: each logical element = 2 consecutive floats.
+        row_base = bn_id * (2 * n)
+        twiddle_stack_stride = nblocks * LOG_N * 2 * n * 2
+        twiddle_block_stride = LOG_N * 2 * n * 2
+        twiddle_stage_stride = 2 * n * 2  # (n // 2) * 4 * 2
+    else:
+        row_base = bn_id * n
+        twiddle_stack_stride = nblocks * LOG_N * 2 * n
+        twiddle_block_stride = LOG_N * 2 * n
+        twiddle_stage_stride = 2 * n  # (n // 2) * 4
     twiddle_sb_base = nstack_idx * twiddle_stack_stride + block_idx * twiddle_block_stride
 
     # Seed output buffer with the input tile so the unrolled stage loop reads
     # uniformly from output_ptr (out_ptr-as-scratch per Phase 6 hadamard
     # pattern; cf. 06-01-SUMMARY.md "Auto-fixed Issues #1"). Full-tile load
     # — no mask needed because TILE_N divides n by construction.
-    x = tl.load(input_ptr + row_base + pos)
-    tl.store(output_ptr + row_base + pos, x)
+    if IS_COMPLEX:
+        # Per-element offsets into the view_as_real layout: real at pos*2,
+        # imag at pos*2 + 1. Load and store separately so the in-register
+        # values stay as two parallel (re, im) register vectors (Option (b)
+        # from the 07-02 plan — cleanest and matches the diag_mult template
+        # at _triton/diag_mult/op.py:64-87 verbatim).
+        pos2 = pos * 2
+        x_re = tl.load(input_ptr + row_base + pos2)
+        x_im = tl.load(input_ptr + row_base + pos2 + 1)
+        tl.store(output_ptr + row_base + pos2, x_re)
+        tl.store(output_ptr + row_base + pos2 + 1, x_im)
+    else:
+        x = tl.load(input_ptr + row_base + pos)
+        tl.store(output_ptr + row_base + pos, x)
     tl.debug_barrier()  # seed write visible before first stage's partner-load
 
     # Unrolled STAGE_COUNT (1..3) butterfly stages. STAGE_COUNT is constexpr
@@ -191,10 +212,6 @@ def _butterfly_kernel(
         # by construction of TILE_N = 1 << (max_stage + 1)).
         tile_partner = tile_offsets ^ stride
 
-        # Load self and partner from the scratch buffer.
-        cur = tl.load(output_ptr + row_base + pos)
-        partner = tl.load(output_ptr + row_base + (col_start + tile_partner))
-
         # Twiddle pair_flat index for each tile position. The oracle uses
         #   t = twiddle[:, block, idx].view(nstacks, n//(2*stride), stride, 2, 2)
         #         .permute(0, 1, 3, 4, 2)
@@ -209,31 +226,97 @@ def _butterfly_kernel(
         pair_flat = (col_start >> 1) + (tile_offsets // (2 * stride)) * stride \
             + (tile_offsets % stride)
 
-        # Per-position twiddle base for this (nstack, nblock, stage).
+        # Per-position twiddle base for this (nstack, nblock, stage). The
+        # ``is_lower`` mask is on the logical position (same for re and im
+        # in the complex path).
         twiddle_stage_base = twiddle_sb_base + idx * twiddle_stage_stride
-        # Each pair_flat has 4 entries (side_out, side_in) in
-        # {(0,0), (0,1), (1,0), (1,1)} — last-dim-fastest row-major.
-        pf4 = pair_flat * 4
-        t00 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 0)
-        t01 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 1)
-        t10 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 2)
-        t11 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 3)
-
-        # For lower-side positions (is_lower): new = t00 * cur + t01 * partner.
-        # For upper-side positions: new = t10 * partner + t11 * cur
-        # (when upper, "lower" input in the 2x2 is the partner, "upper" is cur).
         is_lower = (tile_offsets & stride) == 0
-        new_lower = t00 * cur + t01 * partner
-        new_upper = t10 * partner + t11 * cur
-        new_x = tl.where(is_lower, new_lower, new_upper)
 
-        # Barrier BEFORE the store: ensure all threads finished reading cur/partner
-        # from previous-stage state before any thread overwrites it.
-        tl.debug_barrier()
-        tl.store(output_ptr + row_base + pos, new_x)
-        # Barrier AFTER the store: ensure the next-stage tl.load sees this
-        # stage's writes consistently across all threads.
-        tl.debug_barrier()
+        if IS_COMPLEX:
+            # Each pair_flat has 4 logical complex entries (side_out, side_in)
+            # in {(0,0), (0,1), (1,0), (1,1)}; each occupies 2 floats (re, im)
+            # in the view_as_real layout — so per-pair stride is 8 floats and
+            # the 8 reals are at offsets 0..7 (t00_re, t00_im, t01_re, t01_im,
+            # t10_re, t10_im, t11_re, t11_im) per 04-COMPLEX-LAYOUT.md:58-76.
+            pf8 = pair_flat * 8
+            t00_re = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 0)
+            t00_im = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 1)
+            t01_re = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 2)
+            t01_im = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 3)
+            t10_re = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 4)
+            t10_im = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 5)
+            t11_re = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 6)
+            t11_im = tl.load(twiddle_ptr + twiddle_stage_base + pf8 + 7)
+
+            # Load self and partner (re, im) from the scratch buffer.
+            pos2 = pos * 2
+            partner_pos2 = (col_start + tile_partner) * 2
+            cur_re = tl.load(output_ptr + row_base + pos2)
+            cur_im = tl.load(output_ptr + row_base + pos2 + 1)
+            partner_re = tl.load(output_ptr + row_base + partner_pos2)
+            partner_im = tl.load(output_ptr + row_base + partner_pos2 + 1)
+
+            # 4-FMA template (verbatim from 04-COMPLEX-LAYOUT.md:65-66) applied
+            # per pairwise complex multiply:
+            #   (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+            # For the lower-side new value:
+            #   new_lower = t00 * cur + t01 * partner   (both complex)
+            # For the upper-side new value:
+            #   new_upper = t10 * partner + t11 * cur   (both complex)
+            # Four pairwise complex multiplies + two complex adds per stage.
+            t00_cur_re = t00_re * cur_re - t00_im * cur_im
+            t00_cur_im = t00_re * cur_im + t00_im * cur_re
+            t01_partner_re = t01_re * partner_re - t01_im * partner_im
+            t01_partner_im = t01_re * partner_im + t01_im * partner_re
+            t10_partner_re = t10_re * partner_re - t10_im * partner_im
+            t10_partner_im = t10_re * partner_im + t10_im * partner_re
+            t11_cur_re = t11_re * cur_re - t11_im * cur_im
+            t11_cur_im = t11_re * cur_im + t11_im * cur_re
+
+            new_lower_re = t00_cur_re + t01_partner_re
+            new_lower_im = t00_cur_im + t01_partner_im
+            new_upper_re = t10_partner_re + t11_cur_re
+            new_upper_im = t10_partner_im + t11_cur_im
+
+            new_x_re = tl.where(is_lower, new_lower_re, new_upper_re)
+            new_x_im = tl.where(is_lower, new_lower_im, new_upper_im)
+
+            # Barrier BEFORE the store: ensure all threads finished reading
+            # cur/partner from previous-stage state before any thread
+            # overwrites it.
+            tl.debug_barrier()
+            tl.store(output_ptr + row_base + pos2, new_x_re)
+            tl.store(output_ptr + row_base + pos2 + 1, new_x_im)
+            # Barrier AFTER the store: ensure the next-stage tl.load sees this
+            # stage's writes consistently across all threads.
+            tl.debug_barrier()
+        else:
+            # Each pair_flat has 4 entries (side_out, side_in) in
+            # {(0,0), (0,1), (1,0), (1,1)} — last-dim-fastest row-major.
+            pf4 = pair_flat * 4
+            t00 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 0)
+            t01 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 1)
+            t10 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 2)
+            t11 = tl.load(twiddle_ptr + twiddle_stage_base + pf4 + 3)
+
+            # Load self and partner from the scratch buffer.
+            cur = tl.load(output_ptr + row_base + pos)
+            partner = tl.load(output_ptr + row_base + (col_start + tile_partner))
+
+            # For lower-side positions (is_lower): new = t00 * cur + t01 * partner.
+            # For upper-side positions: new = t10 * partner + t11 * cur
+            # (when upper, "lower" input in the 2x2 is the partner, "upper" is cur).
+            new_lower = t00 * cur + t01 * partner
+            new_upper = t10 * partner + t11 * cur
+            new_x = tl.where(is_lower, new_lower, new_upper)
+
+            # Barrier BEFORE the store: ensure all threads finished reading cur/partner
+            # from previous-stage state before any thread overwrites it.
+            tl.debug_barrier()
+            tl.store(output_ptr + row_base + pos, new_x)
+            # Barrier AFTER the store: ensure the next-stage tl.load sees this
+            # stage's writes consistently across all threads.
+            tl.debug_barrier()
 
 
 @triton_op("torch_structured::butterfly_multiply_triton", mutates_args={})
@@ -247,8 +330,8 @@ def butterfly_multiply(
 
     Parameters:
         twiddle: Tensor of shape ``(nstacks, nblocks, log_n, n // 2, 2, 2)`` —
-            the butterfly factor stack. For Plan 07-01 must be float32; Plan
-            07-02 will also accept complex64.
+            the butterfly factor stack. Must be float32 or complex64; mixed
+            dtypes (twiddle != input dtype) are rejected.
         input: Tensor of shape ``(batch_size, nstacks, input_size)``. If
             ``input_size < n = 1 << log_n``, the wrapper zero-pads on the
             last dim (mirrors ``_torch_ref/butterfly.py:18``).
@@ -274,9 +357,9 @@ def butterfly_multiply(
         * **Ping-pong output buffers:** the wrapper allocates two buffers and
           alternates source/destination per stage-group launch to avoid
           in-place data dependencies.
-        * **fp32 gate (Plan 07-01 only — D-41):** Plan 07-02 lifts the fp32
-          assert and lights up the IS_COMPLEX path via the pre-wired
-          ``view_as_real`` machinery.
+        * **Dtype gate (D-41):** Plan 07-02 lit up complex64 — the wrapper now
+          accepts ``{float32, complex64}`` and routes complex64 through the
+          ``view_as_real`` boundary into the IS_COMPLEX=True kernel branch.
     """
     # Wrapper-boundary preconditions (CLAUDE.md "Error Handling": assert for
     # preconditions). Pitfall 3 (contiguity) must hold before any view_as_real.
@@ -288,9 +371,10 @@ def butterfly_multiply(
     )
     assert input.is_contiguous(), "input must be contiguous (Pitfall 3)"
     assert twiddle.is_contiguous(), "twiddle must be contiguous (Pitfall 3)"
-    # Plan 07-01-only gate (D-41). Plan 07-02 removes ONLY this single line.
-    assert input.dtype == torch.float32, (
-        f"Plan 07-01: fp32-only (complex64 lands in 07-02); got {input.dtype}"
+    # Phase 7 D-41 dtype gate. Plan 07-02 broadened the gate from fp32-only to
+    # {float32, complex64} once the IS_COMPLEX=True kernel branch was lit up.
+    assert input.dtype in (torch.float32, torch.complex64), (
+        f"butterfly_multiply supports fp32 and complex64 only; got {input.dtype}"
     )
 
     batch_size, nstacks, input_size = input.shape
@@ -326,9 +410,9 @@ def butterfly_multiply(
     input = input.contiguous()  # F.pad already contiguous; explicit for kernel pointer math.
 
     # Phase 4 view_as_real wrapper boundary (per 04-COMPLEX-LAYOUT.md:33-50).
-    # Gated off in Plan 07-01 because the fp32-only assert above rejects
-    # complex inputs; the conditional is included for source-level symmetry
-    # with Plan 07-02 (which lights up by removing the fp32 assert).
+    # Active for complex64 inputs; bypassed for fp32. The Pitfall 3 contiguity
+    # asserts above are LOAD-BEARING for this path — view_as_real on a
+    # non-contiguous complex tensor produces incorrect strides.
     is_complex = input.is_complex()
     if is_complex:
         input_work = torch.view_as_real(input).contiguous()
