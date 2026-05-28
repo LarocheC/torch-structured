@@ -20,23 +20,41 @@ _ext_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _load_extension(name):
-    """Load a compiled C++ extension library by name prefix."""
+    """Load a compiled C++ extension library by name prefix.
+
+    Returns True if the extension was found and loaded, False otherwise.
+
+    A missing extension is the NORMAL state for a pure-Python (py3-none-any)
+    wheel: the compiled CUDA C++ backend is optional and only built via
+    FORCE_CUDA=1. When it is absent we emit a single low-noise UserWarning and
+    fall back to the Triton / pure-PyTorch backend (resolved in _ops.py, whose
+    _has_cuda_legacy() probe returns False when the op is not registered). We do
+    NOT raise here, so that `import torch_structured` keeps working without a .so.
+    """
     for suffix in ['*.so', '*.pyd', '*.dylib']:
         pattern = os.path.join(_ext_dir, f'{name}{suffix}')
         matches = glob.glob(pattern)
         if matches:
             torch.ops.load_library(matches[0])
-            return
-    raise ImportError(
-        f"Could not find compiled extension '{name}' in {_ext_dir}. "
-        f"Please reinstall: pip install --no-build-isolation -e ."
-    )
+            return True
+    return False
 
 
 # Load order matters: _version must load before _butterfly so that
 # check_cuda_version() can call torch.ops.torch_structured.cuda_version().
-_load_extension('_version')
-_load_extension('_butterfly')
+_version_loaded = _load_extension('_version')
+_butterfly_loaded = _load_extension('_butterfly')
+
+if not (_version_loaded and _butterfly_loaded):
+    warnings.warn(
+        "torch_structured: compiled CUDA C++ extension(s) not found in "
+        f"{_ext_dir}; falling back to the Triton / pure-PyTorch backend. "
+        "This is expected for the default pure-Python wheel. To build the "
+        "legacy CUDA backend install from source with "
+        "`FORCE_CUDA=1 pip install . --no-build-isolation`.",
+        UserWarning,
+        stacklevel=2,
+    )
 
 
 def check_cuda_version():
@@ -63,7 +81,11 @@ def check_cuda_version():
             )
 
 
-check_cuda_version()
+# check_cuda_version() calls torch.ops.torch_structured.cuda_version(), which is
+# only registered when the _version extension loaded. Skip it on the pure-Python
+# path where no .so is present.
+if _version_loaded:
+    check_cuda_version()
 
 from .butterfly import Butterfly, ButterflyUnitary, ButterflyBmm  # noqa: E402
 from .butterfly_base4 import ButterflyBase4  # noqa: E402
