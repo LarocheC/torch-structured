@@ -163,7 +163,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- _run_forward_stage_groups helper extract (D-49a) + _butterfly_backward_kernel (IS_COMPLEX gated) + _backward body replacement (trail recompute + reverse stage-group walk + per-program tl.sum + tl.atomic_add into fp32 scratch) + three-layer gradcheck (SC#1 a/b/c) + small-case Triton-kernel-exerciser (RESEARCH correction #4) + D-49b small-N fallback test + SC#4 dispatch-binding + monkey-patch shim (NOT sys.modules) + dense smoke + sparse comprehensive fp32 backward tiers
+- [x] 08-01-PLAN.md -- _run_forward_stage_groups helper extract (D-49a) + _butterfly_backward_kernel (IS_COMPLEX gated) + _backward body replacement (trail recompute + reverse stage-group walk + per-program tl.sum + tl.atomic_add into fp32 scratch) + three-layer gradcheck (SC#1 a/b/c) + small-case Triton-kernel-exerciser (RESEARCH correction #4) + D-49b small-N fallback test + SC#4 dispatch-binding + monkey-patch shim (NOT sys.modules) + dense smoke + sparse comprehensive fp32 backward tiers
 - [ ] 08-02-PLAN.md -- light up IS_COMPLEX=True with conjugate-4-FMA for BOTH d_twiddle (D-50c) AND d_input (RESEARCH correction #3) + view_as_real machinery in _backward (D-50b trail_n doubling + scratch trailing-2 axis) + SC#2 complex64 backward allclose at batch=4096 with separate d_twiddle/d_input parity + Wirtinger complex128 gradcheck + unitary landmine detector (PITFALLS §1 analog for backward) + dense smoke + sparse comprehensive complex64 backward tiers + extend 07-BASELINE.json in-place with backward p50/p95 entries (Phase 9 TEST-04 input)
 
 ### Phase 9: Integration Hardening & Correctness Gates
