@@ -196,7 +196,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md -- TBD
+- [ ] 10-01-PLAN.md -- DeprecationWarning insertion (D-74 verbatim) + _has_cuda_legacy_for_op probe silencing (D-74b) + _flashmm deletion (csrc/flashmm/, monarch/flash_mm.py, tests/monarch/test_flash_mm.py) + setup.py / __init__.py docstring strip + tests/test_deprecation.py (3 tests: emit-verbatim, fires-once, probe-silent) + README ## Deprecation timeline + CHANGELOG [1.2.0] extension
 
 ## Progress
 
