@@ -3,17 +3,24 @@
 # is a setuptools build_ext subclass that cannot be declared in TOML.
 #
 # Adapted from https://github.com/pytorch/extension-cpp
+#
+# DEFAULT BUILD: compiles NOTHING. The runtime backend is Triton (JIT) plus a
+# pure-PyTorch fallback, so a stock `uv build` / `pip install .` produces a
+# pure-Python `py3-none-any` wheel and never invokes nvcc or the C++ compiler.
+# The legacy CUDA C++ extensions are opt-in via FORCE_CUDA=1 (see get_extensions).
 
 import os
 from pathlib import Path
 
 from setuptools import setup
 
-import torch
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension, CUDA_HOME
-
 
 def _with_cuda():
+    # Reached only on the FORCE_CUDA=1 opt-in path, so torch is guaranteed to be
+    # importable here (the caller must provide it in the build environment).
+    import torch
+    from torch.utils.cpp_extension import CUDA_HOME
+
     with_cuda = torch.cuda.is_available() and CUDA_HOME is not None
     if os.getenv("FORCE_CUDA", "0") == "1":
         with_cuda = True
@@ -39,6 +46,8 @@ def get_torch_ops_extensions(with_cuda):
     Auto-discovered from csrc/*.cpp; each .cpp may optionally have matching
     csrc/cpu/<name>_cpu.cpp and csrc/cuda/<name>_cuda.cu files.
     """
+    from torch.utils.cpp_extension import CppExtension, CUDAExtension
+
     Extension = CUDAExtension if with_cuda else CppExtension
     define_macros = [("WITH_CUDA", None)] if with_cuda else []
     extra_compile_args = _base_compile_args(with_cuda)
@@ -78,6 +87,8 @@ def get_pybind_extensions(with_cuda):
     if not with_cuda:
         return []
 
+    from torch.utils.cpp_extension import CUDAExtension
+
     extra_compile_args = _base_compile_args(with_cuda)
     extensions = []
 
@@ -113,6 +124,12 @@ def get_pybind_extensions(with_cuda):
 def get_extensions():
     if os.getenv("BUILD_DOCS", "0") == "1":
         return []
+    # DEFAULT: compile nothing. The legacy CUDA C++ extensions only build when
+    # the user explicitly opts in with FORCE_CUDA=1 (torch + ninja + a compiler
+    # must already be present in the build environment in that case). This keeps
+    # the default wheel pure-Python (py3-none-any) and avoids touching nvcc.
+    if os.getenv("FORCE_CUDA", "0") != "1":
+        return []
     with_cuda = _with_cuda()
     return [
         *get_torch_ops_extensions(with_cuda),
@@ -120,9 +137,18 @@ def get_extensions():
     ]
 
 
-setup(
-    ext_modules=get_extensions(),
-    cmdclass={
-        "build_ext": BuildExtension.with_options(use_ninja=True)
-    },
-)
+def _build_kwargs():
+    ext_modules = get_extensions()
+    if not ext_modules:
+        # Pure-Python default: no build_ext customization, no torch import.
+        return {}
+    # Opt-in compiled build: torch is required and BuildExtension drives ninja.
+    from torch.utils.cpp_extension import BuildExtension
+
+    return {
+        "ext_modules": ext_modules,
+        "cmdclass": {"build_ext": BuildExtension.with_options(use_ninja=True)},
+    }
+
+
+setup(**_build_kwargs())

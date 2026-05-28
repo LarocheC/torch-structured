@@ -1,16 +1,28 @@
+# The DEFAULT build compiles nothing (the runtime backend is Triton, which is
+# JIT, plus a pure-PyTorch fallback), so torch and ninja are NOT build-time
+# requirements and `uv build` runs with normal build isolation. Tradeoff: a
+# compiled CUDA build (FORCE_CUDA=1) now requires torch + ninja to already be
+# present in the environment and must skip isolation, e.g.
+#   FORCE_CUDA=1 uv build --no-build-isolation
+#   FORCE_CUDA=1 pip install . --no-build-isolation
 [build-system]
-requires = ["setuptools>=64", "torch>=2.6", "ninja", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "torch-structured"
-version = "0.4.0"
+version = "1.2.0"
 description = "Butterfly, low-displacement-rank, and Monarch structured-matrix primitives in PyTorch"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
+# This is a fork/consolidation of HazyResearch work (Tri Dao et al.) under Apache-2.0.
+# Full upstream attribution and citations: see the NOTICE file.
 authors = [
-    { name = "Tri Dao", email = "trid@stanford.edu" },
+    { name = "Clement Laroche", email = "clement.laroche@gmail.com" },
+]
+maintainers = [
+    { name = "Clement Laroche", email = "clement.laroche@gmail.com" },
 ]
 keywords = [
     "pytorch",
@@ -40,7 +52,9 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hazyresearch/learning-circuits"
+Homepage = "https://github.com/LarocheC/torch-structured"
+Repository = "https://github.com/LarocheC/torch-structured"
+Changelog = "https://github.com/LarocheC/torch-structured/blob/master/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["torch_structured*"]
