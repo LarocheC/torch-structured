@@ -107,6 +107,43 @@ def _has_cuda_legacy_hadamard() -> bool:
         return False
 
 
+def _has_cuda_legacy_for_op(op_name: str) -> bool:
+    """Per-op cuda-legacy probe — multiplexes the existing per-op probes by name.
+
+    Phase 9 D-62a — symmetric to ``_has_triton_kernel(op_name)`` (Phase 5/6/7
+    per-op honest probe). Consumer: ``tests/conftest.py`` ``backend`` fixture
+    (Phase 9 D-62b) uses ``@pytest.mark.op('<op_name>')`` to bind a test to
+    a specific op, then calls this probe to decide whether to skip the
+    ``cuda`` axis when that op's compiled ``.so`` is missing.
+
+    Branches:
+    - ``"butterfly_multiply"`` → ``_has_cuda_legacy()`` (the eagerly-loaded
+      ``_butterfly.so`` symbol, verified at this module's lines 72-79)
+    - ``"diag_mult"`` → ``_has_cuda_legacy_diag_mult()``
+    - ``"hadamard_transform"`` → ``_has_cuda_legacy_hadamard()``
+    - anything else → ``False`` (explicit branch; no try/except per CLAUDE.md
+      ``no try/except in core lib`` — the per-op probes own all the
+      try/except surface, D-21 sanctioned site)
+
+    Never raises; returns a clean bool. Threat T-09-01 (CONTEXT.md threat
+    model): unknown op_names are accepted explicitly without dynamic import,
+    so a typo in ``@pytest.mark.op('butterly_multipl')`` skips the cuda
+    axis safely instead of crashing the test collector.
+
+    Example::
+
+        if not torch_structured._ops._has_cuda_legacy_for_op("butterfly_multiply"):
+            pytest.skip("No CUDA legacy .so for butterfly_multiply")
+    """
+    if op_name == "butterfly_multiply":
+        return _has_cuda_legacy()
+    if op_name == "diag_mult":
+        return _has_cuda_legacy_diag_mult()
+    if op_name == "hadamard_transform":
+        return _has_cuda_legacy_hadamard()
+    return False
+
+
 # Phase 7 name-asymmetry map: the op name (``butterfly_multiply``) doesn't
 # match the Triton-package name (``butterfly``). Phase 5 + Phase 6 ops are
 # symmetric (their package name equals their op name) and fall through the
