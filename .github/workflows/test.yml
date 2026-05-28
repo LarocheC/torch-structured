@@ -8,9 +8,16 @@
 #   - hashFiles(...)    — source-hash invalidates when kernel sources change
 # NOT keyed on github.sha: every commit would invalidate (0% hit rate).
 #
-# In Phase 4 the _triton/ directory has only __init__.py (empty placeholder),
-# so hashFiles returns a stable empty-glob hash. Phase 5 adds the first real
-# kernel and the cache lights up.
+# Phase 9 09-02 (D-64a / RESEARCH §12) adds two opt-in GPU jobs that SHARE
+# the Triton JIT cache with the standard CPU job (same cache key recipe).
+# Both are gated on repo variables so they only run when the project has
+# GPU CI capacity:
+#   - vars.ENABLE_GPU_CI       → test-triton (single-GPU BACKEND=triton run)
+#   - vars.ENABLE_MULTIGPU_CI  → test-multigpu (torchrun --nproc_per_node=2)
+#
+# The standard test job runs CPU-only smoke (dispatch + Phase 9 integration
+# subset with -m "not multigpu and not slow" so the multigpu tests do NOT
+# accidentally run single-process and fail with NCCL setup errors).
 name: Test
 
 on: [push, pull_request]
@@ -45,4 +52,68 @@ jobs:
 
       - run: pip install -e .[test]
 
-      - run: pytest tests/test_dispatch.py -v
+      - run: pytest tests/test_dispatch.py tests/test_phase9_integration.py -v -m "not multigpu and not slow"
+
+  # Phase 9 09-02 D-64a: GPU job for BACKEND=triton full suite (gated on
+  # vars.ENABLE_GPU_CI). Self-hosted Ampere+ runner required for the Triton
+  # path (Phase 9 D-60 hardware requirement: CC 8.0+).
+  test-triton:
+    runs-on: [self-hosted, gpu, ampere]
+    if: ${{ vars.ENABLE_GPU_CI == 'true' }}
+    env:
+      PYTHON_VERSION: '3.11'
+      TORCH_STRUCTURED_BACKEND: triton
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Resolve torch version
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.6'
+          echo "TORCH_VERSION=$(python -c 'import torch; print(torch.__version__)')" >> "$GITHUB_ENV"
+      - name: Cache Triton JIT artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/.triton/cache
+          key: triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-${{ hashFiles('torch_structured/_triton/**/*.py') }}
+          restore-keys: |
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
+      - run: pip install -e .[test]
+      # Excludes multigpu (covered by test-multigpu) and slow (covered by
+      # nightly perf job). Pitfall (RESEARCH §12): -m "not multigpu" is
+      # REQUIRED to keep multigpu tests out of single-process CI.
+      - run: pytest tests/ -v -m "not multigpu and not slow"
+
+  # Phase 9 09-02 D-64a: 2-GPU job for the FSDP smoke test (gated on
+  # vars.ENABLE_MULTIGPU_CI). Runs after test-triton so we only burn 2-GPU
+  # minutes on PRs that already passed single-GPU.
+  test-multigpu:
+    runs-on: [self-hosted, gpu, multi-gpu]
+    if: ${{ vars.ENABLE_MULTIGPU_CI == 'true' }}
+    needs: test-triton
+    env:
+      PYTHON_VERSION: '3.11'
+      TORCH_STRUCTURED_BACKEND: triton
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Resolve torch version
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'torch>=2.6'
+          echo "TORCH_VERSION=$(python -c 'import torch; print(torch.__version__)')" >> "$GITHUB_ENV"
+      - name: Cache Triton JIT artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/.triton/cache
+          key: triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-${{ hashFiles('torch_structured/_triton/**/*.py') }}
+          restore-keys: |
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-torch${{ env.TORCH_VERSION }}-
+            triton-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
+      - run: pip install -e .[test]
+      - run: torchrun --nproc_per_node=2 -m pytest tests/test_distributed_triton.py -v -m multigpu
