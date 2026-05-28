@@ -196,7 +196,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md -- DeprecationWarning insertion (D-74 verbatim) + _has_cuda_legacy_for_op probe silencing (D-74b) + _flashmm deletion (csrc/flashmm/, monarch/flash_mm.py, tests/monarch/test_flash_mm.py) + setup.py / __init__.py docstring strip + tests/test_deprecation.py (3 tests: emit-verbatim, fires-once, probe-silent) + README ## Deprecation timeline + CHANGELOG [1.2.0] extension
+- [x] 10-01-PLAN.md -- DeprecationWarning insertion (D-74 verbatim) + _has_cuda_legacy_for_op probe silencing (D-74b) + _flashmm deletion (csrc/flashmm/, monarch/flash_mm.py, tests/monarch/test_flash_mm.py) + setup.py / __init__.py docstring strip + tests/test_deprecation.py (3 tests: emit-verbatim, fires-once, probe-silent) + README ## Deprecation timeline + CHANGELOG [1.2.0] extension
 
 ## Progress
 
@@ -214,4 +214,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. butterfly Forward (Triton) | v1.2 | 0/2 | Not started | - |
 | 8. butterfly Backward (Triton) | v1.2 | 0/2 | Not started | - |
 | 9. Integration Hardening | v1.2 | 0/3 | Not started | - |
-| 10. CUDA Deprecation & flashmm Removal | v1.2 | 0/1 | Not started | - |
+| 10. CUDA Deprecation & flashmm Removal | v1.2 | 1/1 | Complete   | 2026-05-28 |

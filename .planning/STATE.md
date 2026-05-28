@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Triton Migration
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-05-28T17:07:22.557Z"
-last_activity: 2026-05-28 -- Phase 10 planning complete
+last_updated: "2026-05-28T17:23:35.765Z"
+last_activity: 2026-05-28 -- Phase 10 execution started
 progress:
   total_phases: 10
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A single `uv pip install .` that just works -- with CUDA support when available (v1.2 evolves this to wheel-free Triton JIT)
-**Current focus:** Phase 09 — Integration Hardening & Correctness Gates
+**Current focus:** Phase 10 — CUDA Deprecation & flashmm Removal
 
 ## Current Position
 
-Phase: 09 (Integration Hardening & Correctness Gates) — EXECUTING
-Plan: 1 of 3
-Status: Ready to execute
-Last activity: 2026-05-28 -- Phase 10 planning complete
+Phase: 10 (CUDA Deprecation & flashmm Removal) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 10
+Last activity: 2026-05-28 -- Phase 10 execution started
 
 ## Performance Metrics
 
