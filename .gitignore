@@ -141,3 +141,8 @@ pip-selfcheck.json
 # ``Scripts/``; ours is a checked-in source directory holding CLI tools).
 !/scripts/
 !/scripts/**
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "torch_structured",
+  "project_id": "83749a38-bcd7-4aa8-82b3-8250e098ec64"
+}
