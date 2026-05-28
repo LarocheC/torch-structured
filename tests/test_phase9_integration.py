@@ -347,7 +347,15 @@ def test_backend_agreement_hadamard_transform_fp32(backend, log_n):
     out = torch_structured._ops.hadamard_transform(u, normalize=False)
     expected = hadamard_transform_torch(u, normalize=False)
     err = (out - expected).abs().max().item()
-    assert torch.allclose(out, expected, rtol=_FP32_RTOL, atol=_FP32_ATOL), (
+    # Size-dependent atol (bd torch-structured-f6b): the FWHT sums n terms, so
+    # fp32 non-associativity grows with n. The CUDA kernel's tree-reduction order
+    # differs from the torch_ref oracle; at log_n=8 (n=256) the benign drift
+    # reaches ~7.6e-6, exceeding the strict 1e-6 envelope. Triton matches
+    # torch_ref within 1e-6 at the same size, so this is a CUDA-kernel
+    # accumulation-order artifact, not a correctness bug — widen atol to 1e-5
+    # for log_n >= 8.
+    atol = _FP32_ATOL if log_n < 8 else 1e-5
+    assert torch.allclose(out, expected, rtol=_FP32_RTOL, atol=atol), (
         f"hadamard_transform fp32 mismatch (backend={backend}, log_n={log_n}): max_err={err}"
     )
 
