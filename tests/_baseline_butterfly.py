@@ -197,18 +197,22 @@ def main() -> int:
                 }
                 rows.append(row)
 
-                # Cross-correlation diagnostic (W2) — surface any row where
-                # the custom harness and triton.testing.do_bench disagree by
-                # more than 15% (tolerance per tolerances block; do_bench has
-                # different sync semantics — small drift OK).
+                # Cross-correlation diagnostic (bd torch-structured-exb): the
+                # custom measure_p50_p95 harness systematically over-reports vs
+                # triton.testing.do_bench at these small kernel sizes (per-iter
+                # CUDA-Event + sync overhead dominates 30-250us kernels). This
+                # divergence is EXPECTED, not a defect — do_bench is the
+                # authoritative metric (TEST-04 gate + routing table both read
+                # do_bench_p50_ms; wall_ms_p50 is diagnostic-only). Emit as an
+                # informational note, not a WARNING.
                 if do_bench_p50 is not None and p50_triton > 0:
                     drift = abs(p50_triton - do_bench_p50) / p50_triton
                     if drift > 0.15:
                         print(
-                            f"  WARNING: log_n={log_n} dtype={dtype_name} "
+                            f"  note: log_n={log_n} dtype={dtype_name} "
                             f"custom-harness p50={p50_triton:.4f} ms vs "
-                            f"do_bench p50={do_bench_p50:.4f} ms drift "
-                            f"{drift*100:.1f}% (>15%) — surface in 09-03-SUMMARY.md"
+                            f"do_bench p50={do_bench_p50:.4f} ms ({drift*100:.0f}% higher; "
+                            f"expected — do_bench is authoritative)"
                         )
 
                 cuda_str = f"cuda p50={p50_cuda:.4f} ms  " if p50_cuda is not None else "cuda p50=N/A  "
