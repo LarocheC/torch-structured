@@ -156,6 +156,56 @@ python tests/_baseline_butterfly_backward.py   # regenerate backward perf grid
 python scripts/regenerate_routing_table.py     # rebake _routing.json
 ```
 
+### Measured performance
+
+The numbers below were measured on an **NVIDIA RTX 2000 Ada Generation Laptop
+GPU** (sm_89) with PyTorch's CUDA 13.0 build, `batch_size=64`, `nstacks=1`,
+`nblocks=1`. Each cell is the p50 over a `triton.testing.do_bench` sweep
+(`warmup=25ms`, `rep=100ms`), in milliseconds — lower is better. "torch" is the
+pure-PyTorch oracle (`butterfly_multiply_torch`); "CUDA" is the legacy C++
+backend; "Triton" is the v1.2 default.
+
+**Forward** (`butterfly_multiply`):
+
+| size (n) | dtype     | Triton (ms) | CUDA (ms) | torch (ms) | Triton vs torch | routed → CUDA |
+|---------:|-----------|------------:|----------:|-----------:|----------------:|:-------------:|
+| 256      | fp32      | 0.033       | 0.060     | 0.384      | 11.7×           |               |
+| 256      | complex64 | 0.043       | 0.054     | 0.380      | 8.8×            |               |
+| 512      | fp32      | 0.044       | 0.049     | 0.427      | 9.8×            |               |
+| 512      | complex64 | 0.074       | 0.087     | 0.571      | 7.8×            |               |
+| 1024     | fp32      | 0.072       | 0.076     | 0.464      | 6.5×            |               |
+| 1024     | complex64 | 0.125       | 0.071     | 0.473      | 3.8×            | ✓             |
+| 2048     | fp32      | 0.135       | 0.083     | 0.570      | 4.2×            |               |
+| 2048     | complex64 | 0.255       | 0.080     | 0.510      | 2.0×            | ✓             |
+
+**Backward** (gradient, full autograd callback incl. trail recompute):
+
+| size (n) | dtype     | Triton (ms) | CUDA (ms) | torch (ms) | Triton vs torch | routed → CUDA |
+|---------:|-----------|------------:|----------:|-----------:|----------------:|:-------------:|
+| 256      | fp32      | 0.303       | 0.483     | 2.421      | 8.0×            |               |
+| 256      | complex64 | 0.290       | 0.324     | 2.734      | 9.4×            |               |
+| 512      | fp32      | 0.265       | 0.330     | 2.601      | 9.8×            |               |
+| 512      | complex64 | 1.713       | 0.439     | 3.326      | 1.9×            | ✓             |
+| 1024     | fp32      | 2.723       | 0.829     | 5.842      | 2.1×            | ✓             |
+| 1024     | complex64 | 1.661       | 1.049     | 10.265     | 6.2×            |               |
+| 2048     | fp32      | 2.171       | 0.586     | 5.517      | 2.5×            | ✓             |
+| 2048     | complex64 | 2.132       | 0.462     | 5.684      | 2.7×            | ✓             |
+
+Takeaways on this machine: Triton beats the pure-PyTorch oracle everywhere
+(~2–12×) and is competitive with — often faster than — the legacy CUDA kernel on
+forward and on the smaller backward shapes. On the larger/complex backward
+shapes the legacy CUDA kernel is still faster, so the shipped `_routing.json`
+transparently routes those cells to CUDA when the legacy `.so` is built (the
+✓ rows above, matching the baked routing table).
+
+> **Other GPUs will perform differently.** These figures are specific to this
+> laptop Ada GPU, this driver/toolkit, and these problem sizes — absolute times
+> and the Triton-vs-CUDA crossover points shift with compute capability, memory
+> bandwidth, PyTorch/Triton versions, and shape. The committed `_routing.json`
+> reflects *this* dev host; regenerate it on your own hardware (see above) for
+> routing decisions tuned to your GPU. Treat the table as illustrative, not as a
+> performance guarantee.
+
 ## Deprecation timeline
 
 torch_structured ships Triton as the default backend in v1.2. The legacy CUDA
