@@ -35,6 +35,9 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
   baseline JSON and rebakes the routing table.
 - Modern packaging via `pyproject.toml` — `uv pip install .` works without
   conda or manual steps.
+- **DeprecationWarning on `TORCH_STRUCTURED_BACKEND=cuda` import path**
+  (fires once per process via `warnings.simplefilter("once", DeprecationWarning)`
+  in `torch_structured/_cuda_legacy/__init__.py`). Phase 10.
 
 ### Changed
 
@@ -51,12 +54,20 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - The CUDA C++ backend is still available via `TORCH_STRUCTURED_BACKEND=cuda`
   but is no longer the default. See the v1.3 release notes for the deprecation
   timeline.
+- **`TORCH_STRUCTURED_BACKEND=cuda`** is now soft-deprecated: still available
+  via env var or `set_backend('cuda')` but emits a one-time `DeprecationWarning`.
+  Will be default-disabled in v1.3; removed in v1.4+. See README
+  ["Deprecation timeline"](README.md#deprecation-timeline). Phase 10.
 
 ### Removed
 
-- Nothing user-visible. The legacy `csrc/butterfly.cpp` symbols remain in
-  the build but are no longer invoked by the default code path on
-  Ampere+ hardware.
+- The legacy `csrc/butterfly.cpp`, `csrc/diag_mult/`, and `csrc/hadamard/`
+  symbols remain in the build but are no longer invoked by the default code
+  path on Ampere+ hardware. (Slated for removal in v1.4+ per the
+  "Deprecation timeline" section in README.)
+- `_flashmm` MathDx kernel (`csrc/flashmm/`, `torch_structured/monarch/flash_mm.py`,
+  `tests/monarch/test_flash_mm.py`) — see README ["Deprecation timeline"](README.md#deprecation-timeline)
+  for the broader CUDA-path retirement plan. Phase 10.
 
 ### Fixed
 
