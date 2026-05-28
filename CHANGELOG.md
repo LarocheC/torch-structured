@@ -94,5 +94,5 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/HazyResearch/torch-structured/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/HazyResearch/torch-structured/releases/tag/v1.2.0
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.0
