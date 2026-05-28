@@ -45,6 +45,7 @@ import logging
 import math
 import os
 import pathlib
+import warnings
 
 import torch
 import triton
@@ -122,12 +123,20 @@ def _has_cuda_legacy_diag_mult() -> bool:
     extension (D-22). Returns the ``HAS_CUDA_LEGACY_DIAG_MULT`` sentinel from
     ``_cuda_legacy/diag_mult.py`` — True iff the ``.so`` was built and the
     top-of-module try-import succeeded. Never raises; returns a clean bool.
+
+    Phase 10 D-74b: wrapped in ``warnings.catch_warnings()`` +
+    ``simplefilter("ignore", DeprecationWarning)`` so the probe stays SILENT.
+    The user-facing DeprecationWarning from ``_cuda_legacy/__init__.py`` is
+    reserved for explicit ``set_backend('cuda')`` invocations, not for the
+    silent probe path consumed by the Phase 9 backend fixture.
     """
-    try:
-        from torch_structured._cuda_legacy.diag_mult import HAS_CUDA_LEGACY_DIAG_MULT
-        return HAS_CUDA_LEGACY_DIAG_MULT
-    except ImportError:
-        return False
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        try:
+            from torch_structured._cuda_legacy.diag_mult import HAS_CUDA_LEGACY_DIAG_MULT
+            return HAS_CUDA_LEGACY_DIAG_MULT
+        except ImportError:
+            return False
 
 
 def _has_cuda_legacy_hadamard() -> bool:
@@ -135,12 +144,20 @@ def _has_cuda_legacy_hadamard() -> bool:
 
     Symmetric to ``_has_cuda_legacy_diag_mult()``; returns the ``HAS_CUDA_LEGACY_HADAMARD``
     sentinel from ``_cuda_legacy/hadamard.py``. Never raises; returns a clean bool.
+
+    Phase 10 D-74b: wrapped in ``warnings.catch_warnings()`` +
+    ``simplefilter("ignore", DeprecationWarning)`` so the probe stays SILENT.
+    The user-facing DeprecationWarning from ``_cuda_legacy/__init__.py`` is
+    reserved for explicit ``set_backend('cuda')`` invocations, not for the
+    silent probe path consumed by the Phase 9 backend fixture.
     """
-    try:
-        from torch_structured._cuda_legacy.hadamard import HAS_CUDA_LEGACY_HADAMARD
-        return HAS_CUDA_LEGACY_HADAMARD
-    except ImportError:
-        return False
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        try:
+            from torch_structured._cuda_legacy.hadamard import HAS_CUDA_LEGACY_HADAMARD
+            return HAS_CUDA_LEGACY_HADAMARD
+        except ImportError:
+            return False
 
 
 def _has_cuda_legacy_for_op(op_name: str) -> bool:
