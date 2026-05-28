@@ -11,18 +11,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torch-structured"
-version = "1.2.0"
+version = "1.2.1"
 description = "Butterfly, low-displacement-rank, and Monarch structured-matrix primitives in PyTorch"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 # This is a fork/consolidation of HazyResearch work (Tri Dao et al.) under Apache-2.0.
 # Full upstream attribution and citations: see the NOTICE file.
+# Contact via GitHub Issues (see [project.urls] below) rather than email.
 authors = [
-    { name = "Clement Laroche", email = "clement.laroche@gmail.com" },
+    { name = "Clement Laroche" },
 ]
 maintainers = [
-    { name = "Clement Laroche", email = "clement.laroche@gmail.com" },
+    { name = "Clement Laroche" },
 ]
 keywords = [
     "pytorch",
@@ -54,6 +55,7 @@ test = [
 [project.urls]
 Homepage = "https://github.com/LarocheC/torch-structured"
 Repository = "https://github.com/LarocheC/torch-structured"
+Issues = "https://github.com/LarocheC/torch-structured/issues"
 Changelog = "https://github.com/LarocheC/torch-structured/blob/master/CHANGELOG.md"
 
 [tool.setuptools.packages.find]

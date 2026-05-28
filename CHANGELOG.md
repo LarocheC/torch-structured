@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-28
+
+### Changed
+
+- Removed the maintainer email address from package metadata
+  (`authors`/`maintainers`). Contact is now via
+  [GitHub Issues](https://github.com/LarocheC/torch-structured/issues), added
+  as an `Issues` entry in `[project.urls]`. No functional changes.
+
 ## [1.2.0] - 2026-05-28
 
 This release ports `torch_structured`'s GPU kernels to a Triton-based backend
@@ -94,5 +103,6 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.1
 [1.2.0]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.0
