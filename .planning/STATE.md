@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 10 (CUDA Deprecation & flashmm Removal) — EXECUTING
 Plan: 1 of 1
 Status: Executing Phase 10
-Last activity: 2026-05-28 -- Completed quick task 260528-te0: add normalize kwarg to _cuda_legacy/hadamard.py
+Last activity: 2026-05-28 -- Completed quick task 260528-tv9: TEST-04 perf gate uses do_bench (reliable)
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ None.
 | 260419-v4b | Promote LRU into torch_structured public API (v0.4.0) for cross-repo use | 2026-04-19 | c7929f3 | [260419-v4b-promote-lru-into-torch-structured-packag](./quick/260419-v4b-promote-lru-into-torch-structured-packag/) |
 | 260527-flp | narrow CI workflow to test_dispatch.py only (Phase 4 follow-up) | 2026-05-27 | 1108185 | [260527-flp-narrow-ci-workflow-to-test-dispatch-py-o](./quick/260527-flp-narrow-ci-workflow-to-test-dispatch-py-o/) |
 | 260528-te0 | Add normalize kwarg to _cuda_legacy/hadamard.py wrapper to match torch_ref and Triton backend signatures | 2026-05-28 | 342bdaa | [260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam](./quick/260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam/) |
+| 260528-tv9 | Fix TEST-04 perf gate to use reliable do_bench_p50_ms instead of inflated custom-harness wall_ms_p50 | 2026-05-28 | 9f0fdbe | [260528-tv9-fix-test-04-perf-gate-to-use-reliable-do](./quick/260528-tv9-fix-test-04-perf-gate-to-use-reliable-do/) |
 
 ## Session Continuity
 
