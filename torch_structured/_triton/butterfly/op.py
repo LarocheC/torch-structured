@@ -56,10 +56,25 @@ launch shape + barrier dance but: walks stages in reverse via
 per-program ``tl.sum`` reduce + 4 ``tl.atomic_add(..., sem='relaxed')`` per
 stage into an fp32 scratch buffer (SC#3), and writes ``d_input`` via the
 out_ptr-as-scratch ping-pong pattern Phase 7 uses for the in-flight gradient.
-Plan 08-02 lights up the IS_COMPLEX=True branch (currently gated by a
-``tl.static_assert`` at function entry); Plan 08-01 is fp32-only and asserts
-so at the wrapper boundary. The ``_setup_context``, ``register_autograd`` registration line, and
+The ``_setup_context``, ``register_autograd`` registration line, and
 ``register_fake`` are UNCHANGED per D-57.
+
+Plan 08-02 backward complex64 (D-50b/D-50c, RESEARCH correction #3): the
+IS_COMPLEX=True kernel branch is now lit up — view_as_real wrapper boundary
+actively routes complex64 to the conjugate-4-FMA per-pair multiply for BOTH
+d_twiddle (``grad * conj(input)``) AND d_input (``conj(twiddle).T @ grad``)
+per CONTEXT.md D-50c and RESEARCH correction #3. The sign-flip taxonomy
+(forward 4-FMA has ``out_re = a_re*c_re - a_im*c_im`` MINUS and ``out_im =
+a_re*c_im + a_im*c_re`` PLUS; the conjugate path has ``out_re = a_re*c_re +
+a_im*c_im`` PLUS and ``out_im = a_im*c_re - a_re*c_im`` MINUS) is the
+load-bearing LANDMINE detector for complex correctness — silently passes
+fp32 tests (input.imag=0) but fails complex64 gradcheck. The wrapper boundary
+gates accept ``{float32, complex64}`` (the fp32-only assert from Plan 08-01
+was removed); the kernel-entry ``tl.static_assert(not IS_COMPLEX, ...)`` was
+removed; the trail buffer doubles its trailing axis (``trail_n = n * 2``) via
+view_as_real flatten for complex64; the d_twiddle scratch gets a trailing
+``(2,)`` axis for the re/im split; ``view_as_complex(d_twiddle_scratch.contiguous())``
+casts the fp32 scratch back to complex64 at the callback boundary.
 
 Small-N fallback (D-49b): when ``log_n <= 1`` in ``_backward``, the wrapper
 routes through ``torch.autograd.grad(_butterfly_multiply_torch(...))`` exactly
@@ -480,8 +495,8 @@ def _backward_one_stage(
     STRIDE: tl.constexpr,
     TILE_N: tl.constexpr,
 ):
-    """One reverse-walk stage (Plan 08-01 fp32). All shape-determining values
-    are constexpr so ``tl.reshape`` accepts the shape literal.
+    """One reverse-walk stage (Plan 08-01 fp32 real path). All shape-determining
+    values are constexpr so ``tl.reshape`` accepts the shape literal.
 
     Parameters:
         twiddle_stage_base_ptr: pointer offset = ``twiddle_ptr +
@@ -581,6 +596,178 @@ def _backward_one_stage(
 
 
 @triton.jit
+def _backward_one_stage_complex(
+    twiddle_stage_base_ptr,
+    grad_out_ptr,
+    d_twiddle_scratch_stage_base_ptr,
+    x_in_re,
+    x_in_im,
+    xp_in_re,
+    xp_in_im,
+    g_re,
+    g_im,
+    row_base,
+    col_start,
+    tile_offsets,
+    pos,
+    STRIDE: tl.constexpr,
+    TILE_N: tl.constexpr,
+):
+    """One reverse-walk stage — Plan 08-02 complex64 conjugate-4-FMA path.
+
+    Implements D-50c (d_twiddle = ``grad * conj(input)``) AND RESEARCH
+    correction #3 (d_input = ``conj(twiddle).T @ grad``). Both formulas use
+    the SAME sign-flip pattern relative to the forward 4-FMA:
+
+    - Forward (Phase 7 op.py:266-274): ``(a+bi)(c+di) = (ac-bd) + (ad+bc)i``
+      (MINUS in real, PLUS in imag).
+    - Conjugate ``(a+bi)*conj(c+di) = (a+bi)(c-di) = (ac+bd) + (bc-ad)i``
+      (PLUS in real, MINUS in imag) — applied to d_twiddle when c+di is the
+      input being conjugated, and to d_input when c+di is the twiddle being
+      conjugated (since complex multiply is commutative under conjugation
+      swap; see RESEARCH §"Conjugate Sign Flip in the Complex64 Backward
+      4-FMA" Gap #8).
+
+    The d_twiddle scratch has a trailing-2 axis (re/im split via view_as_real
+    flatten per D-50b), so each pair occupies 8 fp32 slots at offset
+    ``pair_flat * 8`` (4 t_ij x 2 re/im). Per-pair atomics: 8 per stage
+    instead of 4. The pair_flat reduce semantics are identical to the real
+    path — re and im components are summed independently.
+
+    Parameters:
+        x_in_re, x_in_im: real/imag of per-lane activation INPUT.
+        xp_in_re, xp_in_im: real/imag of partner activation INPUT.
+        g_re, g_im: real/imag of per-lane in-flight gradient.
+        Other params: as ``_backward_one_stage``.
+
+    Returns:
+        ``(new_g_re, new_g_im)`` — re/im of d_input update for next stage.
+    """
+    two_stride: tl.constexpr = 2 * STRIDE
+    n_pair_blocks: tl.constexpr = TILE_N // two_stride
+    n_pairs_in_tile: tl.constexpr = TILE_N // 2
+
+    tile_partner = tile_offsets ^ STRIDE
+    pair_flat = (col_start >> 1) + (tile_offsets // two_stride) * STRIDE \
+        + (tile_offsets % STRIDE)
+    is_lower = (tile_offsets & STRIDE) == 0
+
+    # Load 8 floats per twiddle pair (4 t_ij x 2 re/im) at pair_flat * 8 offset.
+    pf8 = pair_flat * 8
+    t00_re = tl.load(twiddle_stage_base_ptr + pf8 + 0)
+    t00_im = tl.load(twiddle_stage_base_ptr + pf8 + 1)
+    t01_re = tl.load(twiddle_stage_base_ptr + pf8 + 2)
+    t01_im = tl.load(twiddle_stage_base_ptr + pf8 + 3)
+    t10_re = tl.load(twiddle_stage_base_ptr + pf8 + 4)
+    t10_im = tl.load(twiddle_stage_base_ptr + pf8 + 5)
+    t11_re = tl.load(twiddle_stage_base_ptr + pf8 + 6)
+    t11_im = tl.load(twiddle_stage_base_ptr + pf8 + 7)
+
+    # Partner-load for g (re and im separately, via stride-2 access).
+    partner_pos2 = (col_start + tile_partner) * 2
+    partner_g_re = tl.load(grad_out_ptr + row_base + partner_pos2)
+    partner_g_im = tl.load(grad_out_ptr + row_base + partner_pos2 + 1)
+
+    # ---------- d_twiddle: grad * conj(input) per D-50c ----------
+    # Mask per-lane contributions to each t_ij entry's pair_flat slot.
+    g_lower_re_eff = tl.where(is_lower, g_re, 0.0)
+    g_lower_im_eff = tl.where(is_lower, g_im, 0.0)
+    g_upper_re_eff = tl.where(is_lower, 0.0, g_re)
+    g_upper_im_eff = tl.where(is_lower, 0.0, g_im)
+
+    x_lower_re_eff = tl.where(is_lower, x_in_re, 0.0)
+    x_lower_im_eff = tl.where(is_lower, x_in_im, 0.0)
+    x_upper_re_eff = tl.where(is_lower, 0.0, x_in_re)
+    x_upper_im_eff = tl.where(is_lower, 0.0, x_in_im)
+    xp_lower_re_eff = tl.where(is_lower, 0.0, xp_in_re)
+    xp_lower_im_eff = tl.where(is_lower, 0.0, xp_in_im)
+    xp_upper_re_eff = tl.where(is_lower, xp_in_re, 0.0)
+    xp_upper_im_eff = tl.where(is_lower, xp_in_im, 0.0)
+
+    # Conjugate 4-FMA: g * conj(x) = (g_re + i g_im)(x_re - i x_im)
+    #                              = (g_re*x_re + g_im*x_im) + i(g_im*x_re - g_re*x_im)
+    # SIGN-FLIP: real has + (forward MINUS), imag has - (forward PLUS).
+    #
+    # d_t_00 = g_lower * conj(x_lower) — note "lower" is x_in for is_lower lanes
+    # d_t_01 = g_lower * conj(x_upper) — x_upper for is_lower lanes is the PARTNER
+    # d_t_10 = g_upper * conj(x_lower) — x_lower for upper lanes is the PARTNER
+    # d_t_11 = g_upper * conj(x_upper) — x_upper for upper lanes is x_in
+    dt_00_re_contrib = g_lower_re_eff * x_lower_re_eff + g_lower_im_eff * x_lower_im_eff
+    dt_00_im_contrib = g_lower_im_eff * x_lower_re_eff - g_lower_re_eff * x_lower_im_eff
+    dt_01_re_contrib = g_lower_re_eff * xp_upper_re_eff + g_lower_im_eff * xp_upper_im_eff
+    dt_01_im_contrib = g_lower_im_eff * xp_upper_re_eff - g_lower_re_eff * xp_upper_im_eff
+    dt_10_re_contrib = g_upper_re_eff * xp_lower_re_eff + g_upper_im_eff * xp_lower_im_eff
+    dt_10_im_contrib = g_upper_im_eff * xp_lower_re_eff - g_upper_re_eff * xp_lower_im_eff
+    dt_11_re_contrib = g_upper_re_eff * x_upper_re_eff + g_upper_im_eff * x_upper_im_eff
+    dt_11_im_contrib = g_upper_im_eff * x_upper_re_eff - g_upper_re_eff * x_upper_im_eff
+
+    # Per-program pair_flat reduce (identical semantics to real path — re and
+    # im are reduced independently).
+    dt_00_re_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_00_re_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_00_im_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_00_im_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_01_re_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_01_re_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_01_im_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_01_im_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_10_re_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_10_re_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_10_im_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_10_im_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_11_re_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_11_re_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+    dt_11_im_per_pair = tl.reshape(tl.sum(
+        tl.reshape(dt_11_im_contrib, (n_pair_blocks, 2, STRIDE)), axis=1), (n_pairs_in_tile,))
+
+    # 8 tl.atomic_add per stage per program (vs 4 for real path) at offset
+    # pair_flat * 8 (vs * 4 for real). sem='relaxed' identical.
+    pair_flat_in_tile = tl.arange(0, n_pairs_in_tile)
+    pair_flat_global = (col_start >> 1) + pair_flat_in_tile
+    twiddle_pair_8 = pair_flat_global * 8
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 0, dt_00_re_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 1, dt_00_im_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 2, dt_01_re_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 3, dt_01_im_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 4, dt_10_re_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 5, dt_10_im_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 6, dt_11_re_per_pair, sem='relaxed')
+    tl.atomic_add(d_twiddle_scratch_stage_base_ptr + twiddle_pair_8 + 7, dt_11_im_per_pair, sem='relaxed')
+
+    # ---------- d_input: conj(T).T @ g per RESEARCH correction #3 ----------
+    # Per-pair: new_g_lower = conj(t00)*g + conj(t10)*partner_g (for is_lower lanes)
+    #          new_g_upper = conj(t01)*partner_g + conj(t11)*g (for upper lanes)
+    # Conjugate 4-FMA: conj(t) * g = (t_re - i t_im)(g_re + i g_im)
+    #                              = (t_re*g_re + t_im*g_im) + i(t_re*g_im - t_im*g_re)
+    # SIGN-FLIP: real has + (forward MINUS), imag has - (forward PLUS).
+    # t00_conj_g: re = t00_re * g_re + t00_im * g_im,  im = t00_re * g_im - t00_im * g_re
+    t00_g_re = t00_re * g_re + t00_im * g_im
+    t00_g_im = t00_re * g_im - t00_im * g_re
+    t10_pg_re = t10_re * partner_g_re + t10_im * partner_g_im
+    t10_pg_im = t10_re * partner_g_im - t10_im * partner_g_re
+    t01_pg_re = t01_re * partner_g_re + t01_im * partner_g_im
+    t01_pg_im = t01_re * partner_g_im - t01_im * partner_g_re
+    t11_g_re = t11_re * g_re + t11_im * g_im
+    t11_g_im = t11_re * g_im - t11_im * g_re
+
+    new_g_lower_re = t00_g_re + t10_pg_re
+    new_g_lower_im = t00_g_im + t10_pg_im
+    new_g_upper_re = t01_pg_re + t11_g_re
+    new_g_upper_im = t01_pg_im + t11_g_im
+
+    new_g_re = tl.where(is_lower, new_g_lower_re, new_g_upper_re)
+    new_g_im = tl.where(is_lower, new_g_lower_im, new_g_upper_im)
+
+    # Store both re and im back to the scratch buffer at stride-2 offsets.
+    pos2 = pos * 2
+    tl.debug_barrier()
+    tl.store(grad_out_ptr + row_base + pos2, new_g_re)
+    tl.store(grad_out_ptr + row_base + pos2 + 1, new_g_im)
+    tl.debug_barrier()
+    return new_g_re, new_g_im
+
+
+@triton.jit
 def _butterfly_backward_kernel(
     twiddle_ptr,
     trail_in_ptr,            # the trail slot holding the activation INPUT to this stage group
@@ -610,10 +797,10 @@ def _butterfly_backward_kernel(
     block"), and writes the per-tile ``d_input`` via ``tl.store(grad_out_ptr,
     g)`` after the reverse loop completes.
 
-    Plan 08-01 IS_COMPLEX gate (D-51a pre-wire): the kernel begins with a
-    ``tl.static_assert`` on ``not IS_COMPLEX`` at function entry. Plan 08-02
-    removes ONLY this line and fills in the conjugate-4-FMA branch
-    (D-50b/D-50c) — zero kernel-signature refactor between plans.
+    Plan 08-02 lit up the IS_COMPLEX=True path: the kernel dispatches on
+    ``IS_COMPLEX`` constexpr to either the real (Plan 08-01) or conjugate
+    (Plan 08-02) per-stage backward math. The kernel signature is unchanged
+    from Plan 08-01 per D-51a (zero kernel-signature refactor).
 
     Recompute strategy for STAGE_COUNT > 1 stages within a group: the trail
     slot ``trail_in_ptr`` holds the activation BEFORE the first stage of the
@@ -653,9 +840,8 @@ def _butterfly_backward_kernel(
     * 1e-7 ~ 2e-6`` per twiddle slot — well within the D-52
     ``rtol=1e-3, atol=1e-4`` envelope.
     """
-    # Plan 08-01 IS_COMPLEX gate — Plan 08-02 removes this line and adds the
-    # conjugate-4-FMA branch per D-50b/D-50c.
-    tl.static_assert(not IS_COMPLEX, 'complex64 backward lands in 08-02')
+    # Plan 08-02 lit up IS_COMPLEX=True — dispatch on constexpr below. No
+    # static_assert gate.
 
     row_id = tl.program_id(axis=0)
     bn_id = tl.program_id(axis=1)
@@ -665,13 +851,21 @@ def _butterfly_backward_kernel(
     col_start = row_id * TILE_N
     pos = col_start + tile_offsets
 
-    # Mirror Phase 7's twiddle pointer arithmetic VERBATIM (fp32 path; D-50b
-    # complex64 lands in Plan 08-02 by removing the static_assert above and
-    # mirroring _butterfly_kernel's IS_COMPLEX branch).
-    row_base = bn_id * n
-    twiddle_stack_stride = nblocks * LOG_N * 2 * n
-    twiddle_block_stride = LOG_N * 2 * n
-    twiddle_stage_stride = 2 * n  # (n // 2) * 4
+    # Per-dtype pointer arithmetic. For fp32 (real): row stride is ``n``;
+    # each twiddle entry occupies 1 float. For complex64 (view_as_real
+    # flatten — D-50b): row stride is ``2 * n``; each twiddle entry occupies
+    # 2 floats (re, im). Mirrors the same dual-stride pattern Phase 7's
+    # forward kernel uses at op.py:179-189.
+    if IS_COMPLEX:
+        row_base = bn_id * (2 * n)
+        twiddle_stack_stride = nblocks * LOG_N * 2 * n * 2
+        twiddle_block_stride = LOG_N * 2 * n * 2
+        twiddle_stage_stride = 2 * n * 2  # (n // 2) * 4 * 2
+    else:
+        row_base = bn_id * n
+        twiddle_stack_stride = nblocks * LOG_N * 2 * n
+        twiddle_block_stride = LOG_N * 2 * n
+        twiddle_stage_stride = 2 * n  # (n // 2) * 4
     twiddle_sb_base = nstack_idx * twiddle_stack_stride + block_idx * twiddle_block_stride
 
     # ----------------------------------------------------------------------
@@ -682,19 +876,62 @@ def _butterfly_backward_kernel(
     # the partner-exchange scratch buffer — we'll overwrite it with the
     # incoming gradient g after the forward walk completes.
     # ----------------------------------------------------------------------
-    x_loaded = tl.load(trail_in_ptr + row_base + pos)
-    tl.store(grad_out_ptr + row_base + pos, x_loaded)
+    if IS_COMPLEX:
+        # Load both re and im components separately via stride-2 access.
+        pos2 = pos * 2
+        x_loaded_re = tl.load(trail_in_ptr + row_base + pos2)
+        x_loaded_im = tl.load(trail_in_ptr + row_base + pos2 + 1)
+        tl.store(grad_out_ptr + row_base + pos2, x_loaded_re)
+        tl.store(grad_out_ptr + row_base + pos2 + 1, x_loaded_im)
+    else:
+        x_loaded = tl.load(trail_in_ptr + row_base + pos)
+        tl.store(grad_out_ptr + row_base + pos, x_loaded)
     tl.debug_barrier()
 
     # x_stages will be filled per stage. With STAGE_COUNT ≤ 3 we materialize
     # at most 3 register tiles; the constexpr loop unrolling makes unused
     # tiles dead-code-eliminated.
-    x_stages_0 = x_loaded  # always defined (input to forward stage 0 of the group)
-    x_stages_1 = x_loaded  # placeholder (overwritten if STAGE_COUNT >= 2)
-    x_stages_2 = x_loaded  # placeholder (overwritten if STAGE_COUNT >= 3)
-    xp_stages_0 = x_loaded  # partner activation at stage 0 of the group
-    xp_stages_1 = x_loaded
-    xp_stages_2 = x_loaded
+    if IS_COMPLEX:
+        x_stages_0_re = x_loaded_re
+        x_stages_0_im = x_loaded_im
+        x_stages_1_re = x_loaded_re
+        x_stages_1_im = x_loaded_im
+        x_stages_2_re = x_loaded_re
+        x_stages_2_im = x_loaded_im
+        xp_stages_0_re = x_loaded_re
+        xp_stages_0_im = x_loaded_im
+        xp_stages_1_re = x_loaded_re
+        xp_stages_1_im = x_loaded_im
+        xp_stages_2_re = x_loaded_re
+        xp_stages_2_im = x_loaded_im
+        # Provide real-path placeholders to satisfy single-binding rules even
+        # in the dead branch (Triton's analysis still walks both branches).
+        x_stages_0 = x_loaded_re
+        x_stages_1 = x_loaded_re
+        x_stages_2 = x_loaded_re
+        xp_stages_0 = x_loaded_re
+        xp_stages_1 = x_loaded_re
+        xp_stages_2 = x_loaded_re
+    else:
+        x_stages_0 = x_loaded
+        x_stages_1 = x_loaded
+        x_stages_2 = x_loaded
+        xp_stages_0 = x_loaded
+        xp_stages_1 = x_loaded
+        xp_stages_2 = x_loaded
+        # Placeholders for the complex-path branch (dead under IS_COMPLEX=False).
+        x_stages_0_re = x_loaded
+        x_stages_0_im = x_loaded
+        x_stages_1_re = x_loaded
+        x_stages_1_im = x_loaded
+        x_stages_2_re = x_loaded
+        x_stages_2_im = x_loaded
+        xp_stages_0_re = x_loaded
+        xp_stages_0_im = x_loaded
+        xp_stages_1_re = x_loaded
+        xp_stages_1_im = x_loaded
+        xp_stages_2_re = x_loaded
+        xp_stages_2_im = x_loaded
 
     # Walk forward stages 0..STAGE_COUNT-1 to materialize per-stage activations.
     # The output of stage s is the INPUT to stage s+1 in forward direction —
@@ -719,53 +956,121 @@ def _butterfly_backward_kernel(
             + (tile_offsets % stride_fw)
         is_lower_fw = (tile_offsets & stride_fw) == 0
         twiddle_stage_base_fw = twiddle_sb_base + idx_fw * twiddle_stage_stride
-        pf4_fw = pair_flat_fw * 4
-        t00_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 0)
-        t01_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 1)
-        t10_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 2)
-        t11_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 3)
 
-        cur_fw = tl.load(grad_out_ptr + row_base + pos)
-        partner_fw = tl.load(grad_out_ptr + row_base + (col_start + tile_partner_fw))
+        if IS_COMPLEX:
+            pf8_fw = pair_flat_fw * 8
+            t00_re_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 0)
+            t00_im_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 1)
+            t01_re_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 2)
+            t01_im_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 3)
+            t10_re_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 4)
+            t10_im_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 5)
+            t11_re_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 6)
+            t11_im_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf8_fw + 7)
 
-        # Snapshot the activation INPUT to this stage (and its partner).
-        # We need it later for backward's d_twiddle = grad_out * input.
-        if stage_offset_fw == 0:
-            x_stages_0 = cur_fw
-            xp_stages_0 = partner_fw
-        if stage_offset_fw == 1:
-            x_stages_1 = cur_fw
-            xp_stages_1 = partner_fw
-        if stage_offset_fw == 2:
-            x_stages_2 = cur_fw
-            xp_stages_2 = partner_fw
+            pos2 = pos * 2
+            partner_pos2 = (col_start + tile_partner_fw) * 2
+            cur_re_fw = tl.load(grad_out_ptr + row_base + pos2)
+            cur_im_fw = tl.load(grad_out_ptr + row_base + pos2 + 1)
+            partner_re_fw = tl.load(grad_out_ptr + row_base + partner_pos2)
+            partner_im_fw = tl.load(grad_out_ptr + row_base + partner_pos2 + 1)
 
-        # Forward stage math (verbatim from _butterfly_kernel, real path)
-        new_lower_fw = t00_fw * cur_fw + t01_fw * partner_fw
-        new_upper_fw = t10_fw * partner_fw + t11_fw * cur_fw
-        new_x_fw = tl.where(is_lower_fw, new_lower_fw, new_upper_fw)
+            # Snapshot the activation INPUT to this stage (re/im).
+            if stage_offset_fw == 0:
+                x_stages_0_re = cur_re_fw
+                x_stages_0_im = cur_im_fw
+                xp_stages_0_re = partner_re_fw
+                xp_stages_0_im = partner_im_fw
+            if stage_offset_fw == 1:
+                x_stages_1_re = cur_re_fw
+                x_stages_1_im = cur_im_fw
+                xp_stages_1_re = partner_re_fw
+                xp_stages_1_im = partner_im_fw
+            if stage_offset_fw == 2:
+                x_stages_2_re = cur_re_fw
+                x_stages_2_im = cur_im_fw
+                xp_stages_2_re = partner_re_fw
+                xp_stages_2_im = partner_im_fw
 
-        tl.debug_barrier()
-        tl.store(grad_out_ptr + row_base + pos, new_x_fw)
-        tl.debug_barrier()
+            # Forward stage math (verbatim from _butterfly_kernel IS_COMPLEX branch):
+            # new_lower = t00*cur + t01*partner ; new_upper = t10*partner + t11*cur
+            # 4-FMA: (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+            t00_cur_re = t00_re_fw * cur_re_fw - t00_im_fw * cur_im_fw
+            t00_cur_im = t00_re_fw * cur_im_fw + t00_im_fw * cur_re_fw
+            t01_partner_re = t01_re_fw * partner_re_fw - t01_im_fw * partner_im_fw
+            t01_partner_im = t01_re_fw * partner_im_fw + t01_im_fw * partner_re_fw
+            t10_partner_re = t10_re_fw * partner_re_fw - t10_im_fw * partner_im_fw
+            t10_partner_im = t10_re_fw * partner_im_fw + t10_im_fw * partner_re_fw
+            t11_cur_re = t11_re_fw * cur_re_fw - t11_im_fw * cur_im_fw
+            t11_cur_im = t11_re_fw * cur_im_fw + t11_im_fw * cur_re_fw
+            new_lower_re = t00_cur_re + t01_partner_re
+            new_lower_im = t00_cur_im + t01_partner_im
+            new_upper_re = t10_partner_re + t11_cur_re
+            new_upper_im = t10_partner_im + t11_cur_im
+            new_x_re_fw = tl.where(is_lower_fw, new_lower_re, new_upper_re)
+            new_x_im_fw = tl.where(is_lower_fw, new_lower_im, new_upper_im)
+            tl.debug_barrier()
+            tl.store(grad_out_ptr + row_base + pos2, new_x_re_fw)
+            tl.store(grad_out_ptr + row_base + pos2 + 1, new_x_im_fw)
+            tl.debug_barrier()
+        else:
+            pf4_fw = pair_flat_fw * 4
+            t00_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 0)
+            t01_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 1)
+            t10_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 2)
+            t11_fw = tl.load(twiddle_ptr + twiddle_stage_base_fw + pf4_fw + 3)
+
+            cur_fw = tl.load(grad_out_ptr + row_base + pos)
+            partner_fw = tl.load(grad_out_ptr + row_base + (col_start + tile_partner_fw))
+
+            # Snapshot the activation INPUT to this stage (and its partner).
+            if stage_offset_fw == 0:
+                x_stages_0 = cur_fw
+                xp_stages_0 = partner_fw
+            if stage_offset_fw == 1:
+                x_stages_1 = cur_fw
+                xp_stages_1 = partner_fw
+            if stage_offset_fw == 2:
+                x_stages_2 = cur_fw
+                xp_stages_2 = partner_fw
+
+            # Forward stage math (verbatim from _butterfly_kernel, real path)
+            new_lower_fw = t00_fw * cur_fw + t01_fw * partner_fw
+            new_upper_fw = t10_fw * partner_fw + t11_fw * cur_fw
+            new_x_fw = tl.where(is_lower_fw, new_lower_fw, new_upper_fw)
+
+            tl.debug_barrier()
+            tl.store(grad_out_ptr + row_base + pos, new_x_fw)
+            tl.debug_barrier()
 
     # ----------------------------------------------------------------------
     # Overwrite grad_out_ptr scratch with the INCOMING gradient (g flowing
     # from later stages into this stage group). Then begin the reverse walk.
     # ----------------------------------------------------------------------
-    g = tl.load(grad_in_ptr + row_base + pos)
-    tl.debug_barrier()
-    tl.store(grad_out_ptr + row_base + pos, g)
-    tl.debug_barrier()
+    if IS_COMPLEX:
+        pos2 = pos * 2
+        g_re = tl.load(grad_in_ptr + row_base + pos2)
+        g_im = tl.load(grad_in_ptr + row_base + pos2 + 1)
+        tl.debug_barrier()
+        tl.store(grad_out_ptr + row_base + pos2, g_re)
+        tl.store(grad_out_ptr + row_base + pos2 + 1, g_im)
+        tl.debug_barrier()
+        # Provide real-path placeholder.
+        g = g_re
+    else:
+        g = tl.load(grad_in_ptr + row_base + pos)
+        tl.debug_barrier()
+        tl.store(grad_out_ptr + row_base + pos, g)
+        tl.debug_barrier()
+        # Placeholders for the complex-path branch (dead under IS_COMPLEX=False).
+        g_re = g
+        g_im = g
 
     # ----------------------------------------------------------------------
     # Reverse stage walk: walk stages STAGE_COUNT-1 down to 0 via hand-unrolled
-    # calls to _backward_one_stage. Each call uses the appropriate constexpr
-    # STRIDE so tl.reshape inside the helper has a literal shape (D-50a).
-    # Per-stage activation INPUT comes from the forward recompute walk's
-    # snapshots (x_stages_*, xp_stages_*). The wrapper kernel must compute
-    # per-stage constexpr STRIDE values from STAGE_START + offset and
-    # INCREASING_STRIDE / LOG_N.
+    # calls to _backward_one_stage (real) or _backward_one_stage_complex
+    # (complex). Each call uses the appropriate constexpr STRIDE so tl.reshape
+    # inside the helper has a literal shape (D-50a).
     # ----------------------------------------------------------------------
 
     # Constexpr per-stage log_stride and stride literals. These reduce at
@@ -780,8 +1085,8 @@ def _butterfly_backward_kernel(
     # ValueError. To prevent this we clamp the unused slots to 0 (so STRIDE
     # values are 1) via `max(..., 0)` — the resulting STRIDE_2 value is
     # irrelevant because the surrounding `if STAGE_COUNT >= 2` / `if
-    # STAGE_COUNT == 3` guards prevent the corresponding _backward_one_stage
-    # call from executing.
+    # STAGE_COUNT == 3` guards prevent the corresponding helper call from
+    # executing.
     if INCREASING_STRIDE:
         LOG_STRIDE_0: tl.constexpr = STAGE_START + 0
         LOG_STRIDE_1: tl.constexpr = max(STAGE_START + 1, 0) if STAGE_COUNT >= 2 else 0
@@ -797,40 +1102,70 @@ def _butterfly_backward_kernel(
     IDX_1: tl.constexpr = STAGE_START + 1
     IDX_2: tl.constexpr = STAGE_START + 2
 
-    # Reverse walk: highest stage first.
-    if STAGE_COUNT == 3:
-        # Stage 2
-        twiddle_stage_base_2 = twiddle_sb_base + IDX_2 * twiddle_stage_stride
-        twiddle_stage_base_ptr_2 = twiddle_ptr + twiddle_stage_base_2
-        d_twiddle_stage_base_ptr_2 = d_twiddle_scratch_ptr + twiddle_stage_base_2
-        g = _backward_one_stage(
-            twiddle_stage_base_ptr_2, grad_out_ptr, d_twiddle_stage_base_ptr_2,
-            x_stages_2, xp_stages_2, g, row_base, col_start, tile_offsets, pos,
-            STRIDE=STRIDE_2, TILE_N=TILE_N,
-        )
-    if STAGE_COUNT >= 2:
-        # Stage 1
-        twiddle_stage_base_1 = twiddle_sb_base + IDX_1 * twiddle_stage_stride
-        twiddle_stage_base_ptr_1 = twiddle_ptr + twiddle_stage_base_1
-        d_twiddle_stage_base_ptr_1 = d_twiddle_scratch_ptr + twiddle_stage_base_1
-        g = _backward_one_stage(
-            twiddle_stage_base_ptr_1, grad_out_ptr, d_twiddle_stage_base_ptr_1,
-            x_stages_1, xp_stages_1, g, row_base, col_start, tile_offsets, pos,
-            STRIDE=STRIDE_1, TILE_N=TILE_N,
-        )
-    if STAGE_COUNT >= 1:
-        # Stage 0
-        twiddle_stage_base_0 = twiddle_sb_base + IDX_0 * twiddle_stage_stride
-        twiddle_stage_base_ptr_0 = twiddle_ptr + twiddle_stage_base_0
-        d_twiddle_stage_base_ptr_0 = d_twiddle_scratch_ptr + twiddle_stage_base_0
-        g = _backward_one_stage(
-            twiddle_stage_base_ptr_0, grad_out_ptr, d_twiddle_stage_base_ptr_0,
-            x_stages_0, xp_stages_0, g, row_base, col_start, tile_offsets, pos,
-            STRIDE=STRIDE_0, TILE_N=TILE_N,
-        )
+    if IS_COMPLEX:
+        # Reverse walk: highest stage first (complex64 path with conjugate-4-FMA).
+        if STAGE_COUNT == 3:
+            twiddle_stage_base_2 = twiddle_sb_base + IDX_2 * twiddle_stage_stride
+            twiddle_stage_base_ptr_2 = twiddle_ptr + twiddle_stage_base_2
+            d_twiddle_stage_base_ptr_2 = d_twiddle_scratch_ptr + twiddle_stage_base_2
+            g_re, g_im = _backward_one_stage_complex(
+                twiddle_stage_base_ptr_2, grad_out_ptr, d_twiddle_stage_base_ptr_2,
+                x_stages_2_re, x_stages_2_im, xp_stages_2_re, xp_stages_2_im,
+                g_re, g_im, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_2, TILE_N=TILE_N,
+            )
+        if STAGE_COUNT >= 2:
+            twiddle_stage_base_1 = twiddle_sb_base + IDX_1 * twiddle_stage_stride
+            twiddle_stage_base_ptr_1 = twiddle_ptr + twiddle_stage_base_1
+            d_twiddle_stage_base_ptr_1 = d_twiddle_scratch_ptr + twiddle_stage_base_1
+            g_re, g_im = _backward_one_stage_complex(
+                twiddle_stage_base_ptr_1, grad_out_ptr, d_twiddle_stage_base_ptr_1,
+                x_stages_1_re, x_stages_1_im, xp_stages_1_re, xp_stages_1_im,
+                g_re, g_im, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_1, TILE_N=TILE_N,
+            )
+        if STAGE_COUNT >= 1:
+            twiddle_stage_base_0 = twiddle_sb_base + IDX_0 * twiddle_stage_stride
+            twiddle_stage_base_ptr_0 = twiddle_ptr + twiddle_stage_base_0
+            d_twiddle_stage_base_ptr_0 = d_twiddle_scratch_ptr + twiddle_stage_base_0
+            g_re, g_im = _backward_one_stage_complex(
+                twiddle_stage_base_ptr_0, grad_out_ptr, d_twiddle_stage_base_ptr_0,
+                x_stages_0_re, x_stages_0_im, xp_stages_0_re, xp_stages_0_im,
+                g_re, g_im, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_0, TILE_N=TILE_N,
+            )
+    else:
+        # Reverse walk: highest stage first (fp32 path, Plan 08-01).
+        if STAGE_COUNT == 3:
+            twiddle_stage_base_2 = twiddle_sb_base + IDX_2 * twiddle_stage_stride
+            twiddle_stage_base_ptr_2 = twiddle_ptr + twiddle_stage_base_2
+            d_twiddle_stage_base_ptr_2 = d_twiddle_scratch_ptr + twiddle_stage_base_2
+            g = _backward_one_stage(
+                twiddle_stage_base_ptr_2, grad_out_ptr, d_twiddle_stage_base_ptr_2,
+                x_stages_2, xp_stages_2, g, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_2, TILE_N=TILE_N,
+            )
+        if STAGE_COUNT >= 2:
+            twiddle_stage_base_1 = twiddle_sb_base + IDX_1 * twiddle_stage_stride
+            twiddle_stage_base_ptr_1 = twiddle_ptr + twiddle_stage_base_1
+            d_twiddle_stage_base_ptr_1 = d_twiddle_scratch_ptr + twiddle_stage_base_1
+            g = _backward_one_stage(
+                twiddle_stage_base_ptr_1, grad_out_ptr, d_twiddle_stage_base_ptr_1,
+                x_stages_1, xp_stages_1, g, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_1, TILE_N=TILE_N,
+            )
+        if STAGE_COUNT >= 1:
+            twiddle_stage_base_0 = twiddle_sb_base + IDX_0 * twiddle_stage_stride
+            twiddle_stage_base_ptr_0 = twiddle_ptr + twiddle_stage_base_0
+            d_twiddle_stage_base_ptr_0 = d_twiddle_scratch_ptr + twiddle_stage_base_0
+            g = _backward_one_stage(
+                twiddle_stage_base_ptr_0, grad_out_ptr, d_twiddle_stage_base_ptr_0,
+                x_stages_0, xp_stages_0, g, row_base, col_start, tile_offsets, pos,
+                STRIDE=STRIDE_0, TILE_N=TILE_N,
+            )
 
     # Final g (post-reverse-walk) is the d_input for the stage-group's input;
-    # it already lives in grad_out_ptr (last store inside _backward_one_stage).
+    # it already lives in grad_out_ptr (last store inside _backward_one_stage*).
 
 
 @triton_op("torch_structured::butterfly_multiply_triton", mutates_args={})
@@ -978,38 +1313,53 @@ def _setup_context(ctx, inputs, output):
 
 
 def _backward(ctx, grad_out):
-    """Plan 08-01 Triton-backed two-input backward (D-49/D-50/D-50a/D-57).
+    """Plan 08-01 (fp32) + Plan 08-02 (complex64) Triton-backed two-input
+    backward (D-49/D-50/D-50a/D-50b/D-50c/D-57).
 
     Replaces Phase 7's oracle delegation with:
 
       1. small-N fallback (log_n <= 1 — D-49b inheritance via the same
          torch.autograd.grad over _butterfly_multiply_torch that Phase 7 used).
-      2. fp32-only assert (Plan 08-02 removes — mirrors how 07-02 removed the
-         wrapper's forward fp32-only assert).
+      2. broader dtype gate accepting {float32, complex64} (Plan 08-02 lit up
+         the complex64 path — the Plan 08-01 fp32-only assert is removed).
       3. pad grad_out + input from {output_size, input_size} up to n
          (mirror forward pad logic).
       4. allocate fp32 trail buffer at STAGE-GROUP granularity:
-         ``(ceil(log_n / 3) * nblocks, batch_size, nstacks, n)`` — at the
-         largest case (log_n=11, nblocks=2, batch=4096, nstacks=1, n=2048)
-         the peak trail buffer is ~256 MB fp32 (RESEARCH correction #2; the
-         CONTEXT.md "~88MB" estimate is incorrect — it computed per-stage
-         when the launches naturally produce per-stage-group outputs). This
-         is acceptable for an 8GB VRAM dev host and is the documented memory
-         cost of the recompute-then-walk-back strategy (the rejected
-         save-during-forward alternative cost ~720 MB).
+         ``(ceil(log_n / 3) * nblocks, batch_size, nstacks, trail_n)`` where
+         ``trail_n = n * 2 if is_complex else n`` (view_as_real flatten for
+         complex64 per D-50b). At the largest case (log_n=11, nblocks=2,
+         batch=4096, nstacks=1, n=2048) the peak trail buffer is ~256 MB
+         fp32 for the real path / ~512 MB for the complex64 path (RESEARCH
+         correction #2). Acceptable for an 8GB VRAM dev host and is the
+         documented memory cost of the recompute-then-walk-back strategy
+         (the rejected save-during-forward alternative cost ~720 MB).
       5. recompute forward into trail via _run_forward_stage_groups(trail_out=trail).
-      6. allocate fp32 d_twiddle_scratch (torch.zeros_like for SC#3 atomic_add).
+      6. allocate fp32 d_twiddle_scratch: shape ``twiddle.shape`` for fp32,
+         ``twiddle.shape + (2,)`` for complex64 (the trailing-2 axis is the
+         re/im split for view_as_real flatten per D-50b — same shape as
+         ``view_as_real(twiddle)``).
       7. walk reverse stage-groups + reverse nblocks, ping-pong between two
          d_input buffers per launch:
            - kernel reads trail[launch_idx], src_grad, twiddle_work
            - kernel writes dst_grad (= upstream grad for next reverse group)
-           - kernel atomic_adds into d_twiddle_scratch
-      8. cast fp32 d_twiddle_scratch -> twiddle.dtype at the callback boundary
-         (D-50a — cast OUTSIDE the kernel, never inside).
+           - kernel atomic_adds into d_twiddle_scratch (4 atomics/stage for
+             fp32, 8 atomics/stage for complex64)
+      8. cast fp32 d_twiddle_scratch back to twiddle.dtype at the callback
+         boundary (D-50a):
+           - fp32: ``d_twiddle_scratch.to(twiddle.dtype)`` (no-op for fp32).
+           - complex64: ``torch.view_as_complex(d_twiddle_scratch.contiguous())``
+             per D-50b view_as_real boundary template.
       9. trim d_input back to input_size.
       10. return (d_twiddle, d_input, None, None) matching the 4 forward inputs
           (twiddle, input, increasing_stride, output_size); last two are
           None because they are non-tensor (bool, Optional[int]).
+
+    Complex64 conjugate-4-FMA (D-50c + RESEARCH correction #3): the kernel's
+    IS_COMPLEX=True branch implements
+      - d_twiddle = ``grad * conj(input)`` (sign-flip: PLUS in real, MINUS in imag)
+      - d_input  = ``conj(twiddle).T @ grad`` (same sign-flip — RESEARCH
+        correction #3 is the d_input conjugate-on-twiddle that fp32 tests
+        silently pass but complex64 d_input parity catches).
     """
     twiddle, input_ = ctx.saved_tensors
     increasing_stride = ctx.increasing_stride
@@ -1032,14 +1382,11 @@ def _backward(ctx, grad_out):
         gt, gi = torch.autograd.grad(out, [twiddle_d, input_d], grad_out)
         return gt, gi, None, None
 
-    # Plan 08-01 fp32-only gate (Plan 08-02 removes this assert and lights
-    # up the IS_COMPLEX=True kernel branch).
-    assert twiddle.dtype == torch.float32 and input_.dtype == torch.float32, (
-        f"Plan 08-01: fp32-only backward (complex64 lands in 08-02); "
-        f"got twiddle.dtype={twiddle.dtype}, input.dtype={input_.dtype}"
-    )
-    assert not is_complex, (
-        "Plan 08-01: is_complex must be False (gated by fp32-only assert above)"
+    # Plan 08-02 broader dtype gate — accepts {float32, complex64} (the
+    # fp32-only assert from Plan 08-01 has been removed).
+    assert twiddle.dtype in (torch.float32, torch.complex64) and input_.dtype == twiddle.dtype, (
+        f"butterfly_multiply backward supports fp32 and complex64; got "
+        f"twiddle.dtype={twiddle.dtype}, input.dtype={input_.dtype}"
     )
 
     # output_size defaults to n at the callback boundary (the wrapper enforces
@@ -1058,19 +1405,39 @@ def _backward(ctx, grad_out):
     # nstacks=1, n=2048) is ceil(11/3) * 2 * 4096 * 1 * 2048 * 4 bytes ≈
     # 256 MB fp32 — the documented memory cost of the recompute-then-walk-back
     # strategy (the rejected save-during-forward alternative cost ~720 MB).
+    # For complex64 the trailing axis doubles (view_as_real flatten — D-50b):
+    # trail_n = n * 2, peak ~512 MB at the same largest case.
+    trail_n = n * 2 if is_complex else n
     n_launches_per_nblock = (log_n + 2) // 3
     trail = torch.empty(
-        n_launches_per_nblock * nblocks, batch_size, nstacks, n,
+        n_launches_per_nblock * nblocks, batch_size, nstacks, trail_n,
         dtype=torch.float32, device=input_padded.device,
     )
 
     # fp32 d_twiddle scratch (SC#3 — atomic_add into fp32 only; final cast
-    # at callback boundary, NEVER inside the kernel).
-    d_twiddle_scratch = torch.zeros_like(twiddle, dtype=torch.float32)
+    # at callback boundary, NEVER inside the kernel). For complex64 the
+    # scratch has a trailing-2 axis for the re/im split per D-50b — same shape
+    # as ``view_as_real(twiddle)`` so we can cast back with view_as_complex.
+    scratch_shape = (*twiddle.shape, 2) if is_complex else twiddle.shape
+    d_twiddle_scratch = torch.zeros(
+        scratch_shape, dtype=torch.float32, device=twiddle.device,
+    )
+
+    # Activate view_as_real machinery for complex64 inputs per D-50b.
+    # Pitfall 3 (04-COMPLEX-LAYOUT.md:78-95): view_as_real on a non-contiguous
+    # complex tensor silently reads garbage; the asserts below are load-bearing.
+    if is_complex:
+        assert input_padded.is_contiguous(), \
+            "input must be contiguous for view_as_real (Pitfall 3)"
+        assert twiddle.is_contiguous(), \
+            "twiddle must be contiguous for view_as_real (Pitfall 3)"
+        twiddle_work = torch.view_as_real(twiddle).contiguous()
+        input_work = torch.view_as_real(input_padded).contiguous()
+    else:
+        twiddle_work = twiddle
+        input_work = input_padded
 
     # Recompute forward into trail (D-49a reuse of Phase 7 launches).
-    twiddle_work = twiddle  # fp32 path; Plan 08-02 adds view_as_real for complex.
-    input_work = input_padded
     _run_forward_stage_groups(
         twiddle_work,
         input_work,
@@ -1091,13 +1458,26 @@ def _backward(ctx, grad_out):
 
     # Ping-pong d_input buffers (mirror Phase 7 forward ping-pong; the
     # backward walk consumes src_grad and produces dst_grad each launch).
+    # For complex64, the kernel operates on view_as_real-flattened buffers;
+    # we keep the complex64 buffers for the final return but pass their
+    # view_as_real views into the kernel.
     d_input_buf_a = torch.empty(
         batch_size, nstacks, n, dtype=input_.dtype, device=input_.device,
     )
     d_input_buf_b = torch.empty_like(d_input_buf_a)
-    d_input_buf_a.copy_(grad_full)
-    src_grad = d_input_buf_a
-    dst_grad = d_input_buf_b
+    if is_complex:
+        assert grad_full.is_contiguous(), \
+            "grad_out must be contiguous for view_as_real (Pitfall 3)"
+        grad_work = torch.view_as_real(grad_full).contiguous()
+        d_input_buf_a_work = torch.view_as_real(d_input_buf_a)
+        d_input_buf_b_work = torch.view_as_real(d_input_buf_b)
+    else:
+        grad_work = grad_full
+        d_input_buf_a_work = d_input_buf_a
+        d_input_buf_b_work = d_input_buf_b
+    d_input_buf_a_work.copy_(grad_work)
+    src_grad = d_input_buf_a_work
+    dst_grad = d_input_buf_b_work
 
     # Initialize cur_increasing_stride to the value used by the LAST forward
     # block (which is what the last forward launch used — the value we begin
@@ -1129,10 +1509,14 @@ def _backward(ctx, grad_out):
             # INPUT to forward launch i+1. For the backward of forward launch
             # `launch_idx_global`, we need the activation INPUT to that
             # forward launch — which is `trail[launch_idx_global - 1]` for
-            # launch_idx_global > 0, or the original `input_padded` for
-            # launch_idx_global == 0 (the very first forward launch).
+            # launch_idx_global > 0, or the original `input_work` (the
+            # view_as_real form of input_padded for complex64; input_padded
+            # itself for fp32) for launch_idx_global == 0 (the very first
+            # forward launch). Using ``input_work`` (not the raw complex
+            # tensor) is load-bearing for the complex64 path — the kernel
+            # expects fp32 pointers per D-50b.
             if launch_idx_global == 0:
-                trail_slot = input_padded
+                trail_slot = input_work
             else:
                 trail_slot = trail[launch_idx_global - 1]
             wrap_triton(_butterfly_backward_kernel)[grid](
@@ -1158,12 +1542,28 @@ def _backward(ctx, grad_out):
         # End-of-block: toggle direction for the next (earlier) nblock.
         cur_increasing_stride = not cur_increasing_stride
 
-    # After loop, src_grad holds the final d_input (last swap put dst -> src).
-    d_input_full = src_grad
-
-    # fp32 scratch -> twiddle.dtype cast at the callback boundary (D-50a).
-    # NEVER cast inside the kernel; always at the boundary.
-    d_twiddle = d_twiddle_scratch.to(twiddle.dtype)
+    # After loop, src_grad holds the final d_input view (last swap put dst -> src).
+    # For complex64, src_grad is a view_as_real form pointing at one of the
+    # two complex64 buffers; we recover the original complex64 buffer to
+    # return.
+    if is_complex:
+        # src_grad is one of (d_input_buf_a_work, d_input_buf_b_work); recover
+        # the underlying complex64 buffer.
+        if src_grad is d_input_buf_a_work:
+            d_input_full = d_input_buf_a
+        else:
+            d_input_full = d_input_buf_b
+        # fp32 scratch -> complex64 cast via view_as_complex (D-50b). The
+        # contiguous() guards against any stride mismatch from
+        # torch.zeros((..., 2)) — defensive though zeros() is already
+        # contiguous; matches RESEARCH §"d_twiddle_scratch Shape + Offsets"
+        # reverse-pattern.
+        d_twiddle = torch.view_as_complex(d_twiddle_scratch.contiguous())
+    else:
+        d_input_full = src_grad
+        # fp32 scratch -> twiddle.dtype cast at the callback boundary (D-50a).
+        # NEVER cast inside the kernel; always at the boundary.
+        d_twiddle = d_twiddle_scratch.to(twiddle.dtype)
 
     # D-42 d_input trim back to input_size (mirror forward output_size trim).
     d_input_out = d_input_full[:, :, :input_size]
