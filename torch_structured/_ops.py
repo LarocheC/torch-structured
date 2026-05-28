@@ -69,14 +69,47 @@ def _has_triton() -> bool:
     return torch.cuda.is_available()
 
 
+_HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK: "bool | None" = None  # one-shot cache
+
+
 def _has_cuda_legacy() -> bool:
-    """Return True iff the compiled C++ butterfly op is registered.
+    """Return True iff the compiled C++ butterfly op is registered AND runtime-dispatchable.
 
     The .so is loaded as a side effect of importing
-    ``torch_structured.butterfly`` (see butterfly/__init__.py:22-39). This
-    probe simply checks whether the registration succeeded.
+    ``torch_structured.butterfly`` (see butterfly/__init__.py:22-39). The probe
+    checks BOTH whether the registration succeeded AND whether the CUDA
+    dispatch actually works at runtime (one-shot cached per process — Phase 9
+    09-01 honest-probe tightening per CHECKER B3 / D-21).
+
+    Why the runtime check matters: a build with CUDA-version mismatch (or a
+    CPU-only build with the schema still registered) leaves
+    ``hasattr(torch.ops.torch_structured, "butterfly_multiply")`` True but the
+    CUDA dispatch raises ``RuntimeError("Not compiled with CUDA support")`` on
+    first invocation. Without the runtime check, the conftest cuda axis runs
+    and fails with a verbose stack trace; with the runtime check the cuda
+    axis is honestly skipped per D-62 (matches the
+    ``_has_cuda_legacy_diag_mult/hadamard`` sentinel-based pattern at
+    ``_cuda_legacy/diag_mult.py:24-29`` and ``_cuda_legacy/hadamard.py``).
+
+    The runtime check is a tiny ``log_n=2`` CUDA call (n=4) cached for the
+    lifetime of the process; one-shot cost bounded at first probe.
     """
-    return hasattr(torch.ops.torch_structured, "butterfly_multiply")
+    global _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK
+    if not hasattr(torch.ops.torch_structured, "butterfly_multiply"):
+        return False
+    if not torch.cuda.is_available():
+        return False
+    if _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK is None:
+        try:
+            log_n = 2
+            n = 1 << log_n
+            tw = torch.zeros(1, 1, log_n, n // 2, 2, 2, device="cuda", dtype=torch.float32)
+            x = torch.zeros(1, 1, n, device="cuda", dtype=torch.float32)
+            torch.ops.torch_structured.butterfly_multiply(tw, x, True, n)
+            _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK = True
+        except RuntimeError:
+            _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK = False
+    return _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK
 
 
 def _has_cuda_legacy_diag_mult() -> bool:
@@ -105,6 +138,43 @@ def _has_cuda_legacy_hadamard() -> bool:
         return HAS_CUDA_LEGACY_HADAMARD
     except ImportError:
         return False
+
+
+def _has_cuda_legacy_for_op(op_name: str) -> bool:
+    """Per-op cuda-legacy probe — multiplexes the existing per-op probes by name.
+
+    Phase 9 D-62a — symmetric to ``_has_triton_kernel(op_name)`` (Phase 5/6/7
+    per-op honest probe). Consumer: ``tests/conftest.py`` ``backend`` fixture
+    (Phase 9 D-62b) uses ``@pytest.mark.op('<op_name>')`` to bind a test to
+    a specific op, then calls this probe to decide whether to skip the
+    ``cuda`` axis when that op's compiled ``.so`` is missing.
+
+    Branches:
+    - ``"butterfly_multiply"`` → ``_has_cuda_legacy()`` (the eagerly-loaded
+      ``_butterfly.so`` symbol, verified at this module's lines 72-79)
+    - ``"diag_mult"`` → ``_has_cuda_legacy_diag_mult()``
+    - ``"hadamard_transform"`` → ``_has_cuda_legacy_hadamard()``
+    - anything else → ``False`` (explicit branch; no try/except per CLAUDE.md
+      ``no try/except in core lib`` — the per-op probes own all the
+      try/except surface, D-21 sanctioned site)
+
+    Never raises; returns a clean bool. Threat T-09-01 (CONTEXT.md threat
+    model): unknown op_names are accepted explicitly without dynamic import,
+    so a typo in ``@pytest.mark.op('butterly_multipl')`` skips the cuda
+    axis safely instead of crashing the test collector.
+
+    Example::
+
+        if not torch_structured._ops._has_cuda_legacy_for_op("butterfly_multiply"):
+            pytest.skip("No CUDA legacy .so for butterfly_multiply")
+    """
+    if op_name == "butterfly_multiply":
+        return _has_cuda_legacy()
+    if op_name == "diag_mult":
+        return _has_cuda_legacy_diag_mult()
+    if op_name == "hadamard_transform":
+        return _has_cuda_legacy_hadamard()
+    return False
 
 
 # Phase 7 name-asymmetry map: the op name (``butterfly_multiply``) doesn't
