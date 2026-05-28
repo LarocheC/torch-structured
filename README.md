@@ -90,6 +90,81 @@ w2 = torch.randn(8, 8, 8)
 out = blockdiag_butterfly_multiply(x, w1, w2)
 ```
 
+## Triton backend (v1.2+)
+
+Starting with v1.2, `torch_structured` ships a Triton-based GPU backend that replaces
+the CUDA C++ extensions for the main kernels (`butterfly_multiply`, `diag_mult`,
+`hadamard_transform`). The Triton path is the default when both a CUDA device and
+PyTorch >= 2.6 are available.
+
+### Hardware requirements
+
+The Triton backend requires NVIDIA CUDA Compute Capability **CC 8.0 or later**
+(Ampere generation: RTX 30xx/40xx, A100, H100, etc.). Older GPUs are NOT
+supported on the Triton path:
+
+- **Volta (sm_70 — V100, Titan V):** pin to v1.1 (`pip install torch-structured==1.1.*`)
+  OR use the CUDA backend with a self-built `.so`.
+- **Turing (sm_75 — T4, RTX 20xx):** same recommendation as Volta.
+
+Switch to the CUDA backend (when the legacy `.so` is built) via:
+
+```bash
+export TORCH_STRUCTURED_BACKEND=cuda
+```
+
+### Deterministic mode
+
+By default, the Triton backward kernel uses atomic-add reductions for
+`d_twiddle` accumulation, which can produce slightly different results across
+runs (within documented tolerance, but not bit-identical).
+
+For reproducible gradients, opt into deterministic mode:
+
+```python
+import torch_structured
+
+torch_structured.set_deterministic(True)
+# ... training step ...
+torch_structured.set_deterministic(False)
+```
+
+Under deterministic mode, the backward routes through the pure-PyTorch oracle
+(`butterfly_multiply_torch`) — slower, but deterministic by construction.
+Deterministic mode also activates automatically when
+`torch.use_deterministic_algorithms(True)` is set globally (additive OR
+composition with PyTorch's flag).
+
+### Switching backends
+
+Use `TORCH_STRUCTURED_BACKEND` at import time OR
+`torch_structured.set_backend()` at runtime:
+
+```bash
+TORCH_STRUCTURED_BACKEND=triton  # default on Ampere+
+TORCH_STRUCTURED_BACKEND=cuda    # legacy CUDA C++ path (requires built .so)
+TORCH_STRUCTURED_BACKEND=torch   # pure-PyTorch fallback (CPU OK)
+TORCH_STRUCTURED_BACKEND=auto    # try triton -> cuda -> torch
+```
+
+### Runtime selector
+
+On some shapes the Triton kernel may be slower than the legacy CUDA path. To
+avoid forcing users to choose between backends, the library ships a static
+routing table (`torch_structured/_routing.json`) baked from
+`triton.testing.do_bench`-style measurements at packaging time. When you call
+a routed shape with the Triton backend AND the legacy `.so` is available, the
+call transparently routes to CUDA. The selector is dormant when no cell is
+marked `route_to_cuda` — Triton handles every shape.
+
+To regenerate the routing table on your hardware:
+
+```bash
+python tests/_baseline_butterfly.py            # regenerate forward perf grid
+python tests/_baseline_butterfly_backward.py   # regenerate backward perf grid
+python scripts/regenerate_routing_table.py     # rebake _routing.json
+```
+
 ## Tests
 
 ```bash
