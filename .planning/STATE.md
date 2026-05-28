@@ -5,7 +5,7 @@ milestone_name: Triton Migration
 status: executing
 stopped_at: Phase 10 context gathered
 last_updated: "2026-05-28T17:23:35.765Z"
-last_activity: 2026-05-28 -- Phase 10 execution started
+last_activity: 2026-05-28 -- Quick task 260528-ui3: PyPI publishing prep complete
 progress:
   total_phases: 10
   completed_phases: 5
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 10 (CUDA Deprecation & flashmm Removal) — EXECUTING
 Plan: 1 of 1
 Status: Executing Phase 10
-Last activity: 2026-05-28 -- Completed quick task 260528-tv9: TEST-04 perf gate uses do_bench (reliable)
+Last activity: 2026-05-28 -- Completed quick task 260528-ui3: PyPI publishing prep (pure-Python wheel, v1.2.0, fork metadata)
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ None.
 | 260527-flp | narrow CI workflow to test_dispatch.py only (Phase 4 follow-up) | 2026-05-27 | 1108185 | [260527-flp-narrow-ci-workflow-to-test-dispatch-py-o](./quick/260527-flp-narrow-ci-workflow-to-test-dispatch-py-o/) |
 | 260528-te0 | Add normalize kwarg to _cuda_legacy/hadamard.py wrapper to match torch_ref and Triton backend signatures | 2026-05-28 | 342bdaa | [260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam](./quick/260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam/) |
 | 260528-tv9 | Fix TEST-04 perf gate to use reliable do_bench_p50_ms instead of inflated custom-harness wall_ms_p50 | 2026-05-28 | 9f0fdbe | [260528-tv9-fix-test-04-perf-gate-to-use-reliable-do](./quick/260528-tv9-fix-test-04-perf-gate-to-use-reliable-do/) |
+| 260528-ui3 | PyPI publishing prep: gate CUDA build behind FORCE_CUDA=1 (pure-Python py3-none-any wheel), bump to 1.2.0, fork metadata, CHANGELOG links — build-verified, not published | 2026-05-28 | 8f0c2e8 | [260528-ui3-prepare-torch-structured-for-pypi-publis](./quick/260528-ui3-prepare-torch-structured-for-pypi-publis/) |
 
 ## Session Continuity
 
