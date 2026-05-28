@@ -10,7 +10,8 @@
       "wall_ms_p95": 0.444416,
       "reference_torch_ref_p50": 0.37376,
       "measured_at": "2026-05-27T20:04:10.271752Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -22,7 +23,8 @@
       "wall_ms_p95": 0.258048,
       "reference_torch_ref_p50": 0.349184,
       "measured_at": "2026-05-27T20:04:10.349714Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -34,7 +36,8 @@
       "wall_ms_p95": 0.242688,
       "reference_torch_ref_p50": 0.416768,
       "measured_at": "2026-05-27T20:04:10.431676Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -46,7 +49,8 @@
       "wall_ms_p95": 0.561248,
       "reference_torch_ref_p50": 0.403488,
       "measured_at": "2026-05-27T20:04:10.524947Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -58,7 +62,8 @@
       "wall_ms_p95": 0.236544,
       "reference_torch_ref_p50": 0.434176,
       "measured_at": "2026-05-27T20:04:10.612923Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -70,7 +75,8 @@
       "wall_ms_p95": 0.423936,
       "reference_torch_ref_p50": 0.44032,
       "measured_at": "2026-05-27T20:04:10.716188Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -82,7 +88,8 @@
       "wall_ms_p95": 0.3328,
       "reference_torch_ref_p50": 0.47936,
       "measured_at": "2026-05-27T20:04:10.818728Z",
-      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
     },
     {
       "kernel": "butterfly_multiply",
@@ -94,6 +101,111 @@
       "wall_ms_p95": 0.518144,
       "reference_torch_ref_p50": 0.480256,
       "measured_at": "2026-05-27T20:04:10.942674Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "direction": "forward"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "fp32",
+      "log_n": 8,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 1.815552,
+      "wall_ms_p95": 2.444288,
+      "reference_torch_ref_p50": 2.432928,
+      "measured_at": "2026-05-28T07:49:15.232354Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "complex64",
+      "log_n": 8,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.024448,
+      "wall_ms_p95": 4.087808,
+      "reference_torch_ref_p50": 2.58032,
+      "measured_at": "2026-05-28T07:49:15.941437Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "fp32",
+      "log_n": 9,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.074592,
+      "wall_ms_p95": 4.542464,
+      "reference_torch_ref_p50": 2.900992,
+      "measured_at": "2026-05-28T07:49:17.960294Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "complex64",
+      "log_n": 9,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.00704,
+      "wall_ms_p95": 3.719168,
+      "reference_torch_ref_p50": 3.393536,
+      "measured_at": "2026-05-28T07:49:18.701649Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "fp32",
+      "log_n": 10,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.612224,
+      "wall_ms_p95": 4.774912,
+      "reference_torch_ref_p50": 3.857408,
+      "measured_at": "2026-05-28T07:49:19.513767Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "complex64",
+      "log_n": 10,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.502464,
+      "wall_ms_p95": 3.94752,
+      "reference_torch_ref_p50": 3.218432,
+      "measured_at": "2026-05-28T07:49:20.263641Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "fp32",
+      "log_n": 11,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 2.847744,
+      "wall_ms_p95": 7.675904,
+      "reference_torch_ref_p50": 3.520512,
+      "measured_at": "2026-05-28T07:49:22.739975Z",
+      "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
+    },
+    {
+      "kernel": "butterfly_multiply",
+      "direction": "backward",
+      "dtype": "complex64",
+      "log_n": 11,
+      "nstacks": 1,
+      "nblocks": 1,
+      "wall_ms_p50": 3.84,
+      "wall_ms_p95": 13.274112,
+      "reference_torch_ref_p50": 3.693472,
+      "measured_at": "2026-05-28T07:49:28.067700Z",
       "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU"
     }
   ]
