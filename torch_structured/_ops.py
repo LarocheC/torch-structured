@@ -69,14 +69,47 @@ def _has_triton() -> bool:
     return torch.cuda.is_available()
 
 
+_HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK: "bool | None" = None  # one-shot cache
+
+
 def _has_cuda_legacy() -> bool:
-    """Return True iff the compiled C++ butterfly op is registered.
+    """Return True iff the compiled C++ butterfly op is registered AND runtime-dispatchable.
 
     The .so is loaded as a side effect of importing
-    ``torch_structured.butterfly`` (see butterfly/__init__.py:22-39). This
-    probe simply checks whether the registration succeeded.
+    ``torch_structured.butterfly`` (see butterfly/__init__.py:22-39). The probe
+    checks BOTH whether the registration succeeded AND whether the CUDA
+    dispatch actually works at runtime (one-shot cached per process — Phase 9
+    09-01 honest-probe tightening per CHECKER B3 / D-21).
+
+    Why the runtime check matters: a build with CUDA-version mismatch (or a
+    CPU-only build with the schema still registered) leaves
+    ``hasattr(torch.ops.torch_structured, "butterfly_multiply")`` True but the
+    CUDA dispatch raises ``RuntimeError("Not compiled with CUDA support")`` on
+    first invocation. Without the runtime check, the conftest cuda axis runs
+    and fails with a verbose stack trace; with the runtime check the cuda
+    axis is honestly skipped per D-62 (matches the
+    ``_has_cuda_legacy_diag_mult/hadamard`` sentinel-based pattern at
+    ``_cuda_legacy/diag_mult.py:24-29`` and ``_cuda_legacy/hadamard.py``).
+
+    The runtime check is a tiny ``log_n=2`` CUDA call (n=4) cached for the
+    lifetime of the process; one-shot cost bounded at first probe.
     """
-    return hasattr(torch.ops.torch_structured, "butterfly_multiply")
+    global _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK
+    if not hasattr(torch.ops.torch_structured, "butterfly_multiply"):
+        return False
+    if not torch.cuda.is_available():
+        return False
+    if _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK is None:
+        try:
+            log_n = 2
+            n = 1 << log_n
+            tw = torch.zeros(1, 1, log_n, n // 2, 2, 2, device="cuda", dtype=torch.float32)
+            x = torch.zeros(1, 1, n, device="cuda", dtype=torch.float32)
+            torch.ops.torch_structured.butterfly_multiply(tw, x, True, n)
+            _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK = True
+        except RuntimeError:
+            _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK = False
+    return _HAS_CUDA_LEGACY_BUTTERFLY_RUNTIME_OK
 
 
 def _has_cuda_legacy_diag_mult() -> bool:

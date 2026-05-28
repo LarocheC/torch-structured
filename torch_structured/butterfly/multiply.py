@@ -77,5 +77,27 @@ def butterfly_multiply(*args, **kwargs):
     while honoring the D-05 attribute-access contract: the binding is re-read
     on every call so ``set_backend()`` switches take effect transparently
     through the existing import-time binding in ``butterfly.py``.
+
+    Phase 9 09-01 CPU compatibility note (Rule 1 auto-fix): before the §0
+    LANDMINE fix, the @torch.jit.script wrapper called
+    ``torch.ops.torch_structured.butterfly_multiply`` directly — that op has
+    BOTH CPU and CUDA dispatch keys. After the fix, ``_ops.butterfly_multiply``
+    under BACKEND=triton binds to the Triton kernel which is CUDA-only, so
+    naive CPU-tensor calls (e.g., ``tests/test_combine.py``,
+    ``tests/test_permutation.py``) fail with ``ValueError: Pointer argument
+    cannot be accessed from Triton (cpu tensor?)``. The delegator therefore
+    routes CPU inputs to the pure-PyTorch oracle (mathematically equivalent
+    to the C++ CPU dispatch — both compute the same butterfly algorithm) and
+    CUDA inputs to ``_ops.butterfly_multiply`` (where the Triton or CUDA
+    legacy backend lives). This preserves the v1.1 user contract that
+    ``Butterfly(...).forward(x)`` works for both CPU and CUDA tensors.
     """
+    # Args are positional: (twiddle, input, increasing_stride, output_size=None).
+    # Detect CPU by inspecting the input tensor (positional arg 1).
+    if len(args) >= 2 and isinstance(args[1], torch.Tensor) and not args[1].is_cuda:
+        return butterfly_multiply_torch(*args, **kwargs)
+    # kwargs-only form: input via keyword (rare in practice; the legacy and
+    # current call sites are all positional).
+    if "input" in kwargs and isinstance(kwargs["input"], torch.Tensor) and not kwargs["input"].is_cuda:
+        return butterfly_multiply_torch(*args, **kwargs)
     return torch_structured._ops.butterfly_multiply(*args, **kwargs)
