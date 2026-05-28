@@ -40,8 +40,11 @@ time; subsequent reassignments to ``X.Y`` are invisible to the caller.
 enforces this in consumer plans.
 """
 import importlib
+import json
 import logging
+import math
 import os
+import pathlib
 
 import torch
 import triton
@@ -291,7 +294,66 @@ def _resolve(name: str) -> str:
             from torch_structured._triton.butterfly.op import (  # type: ignore[import-not-found]
                 butterfly_multiply as _triton_bm,
             )
-            butterfly_multiply = _triton_bm
+            # Phase 9 09-03 D-66b: wrap the Triton kernel binding with a
+            # routing closure that consults ``_should_route_to_cuda`` on each
+            # call. When the routing table marks (op, log_n, dtype,
+            # 'forward') as route_to_cuda AND ``_has_cuda_legacy()`` is True,
+            # route to the CUDA path; otherwise fall through to the Triton
+            # kernel. When CUDA is unavailable and a cell is marked, emit a
+            # one-shot warning (D-61b) and fall back to Triton.
+            #
+            # The forward direction is the only one the resolver sees here.
+            # Backward direction is correctly handled transitively: if the
+            # forward routes to CUDA, the autograd graph attached to the
+            # CUDA-produced output drives the CUDA backward; if it stays on
+            # Triton, the Phase 8 register_autograd _backward callback handles
+            # it. No separate backward-direction hook is needed at the
+            # resolver level.
+            if _has_cuda_legacy():
+                from torch_structured._cuda_legacy import (
+                    butterfly_multiply as _cuda_bm_for_route,
+                )
+
+                def _routed_butterfly_multiply(twiddle, input_, *args, **kwargs):
+                    if _should_route_to_cuda(
+                        "butterfly_multiply",
+                        tuple(input_.shape),
+                        input_.dtype,
+                        "forward",
+                    ):
+                        return _cuda_bm_for_route(twiddle, input_, *args, **kwargs)
+                    return _triton_bm(twiddle, input_, *args, **kwargs)
+
+                butterfly_multiply = _routed_butterfly_multiply
+            else:
+                # D-61b: when CUDA is unavailable AND the routing table marks
+                # any cell route_to_cuda, log a one-shot warning at first
+                # invocation. Bind a thin closure that emits the warning the
+                # first time it sees a routed cell, then falls back to
+                # Triton.
+                def _triton_with_cuda_missing_warning(twiddle, input_, *args, **kwargs):
+                    if _ROUTING_TABLE and not _ROUTING_DISABLED:
+                        log_n = _shape_to_log_n(tuple(input_.shape))
+                        dtype = input_.dtype
+                        dtype_str = "fp32" if dtype == torch.float32 else (
+                            "complex64" if dtype == torch.complex64 else str(dtype)
+                        )
+                        key = f"butterfly_multiply::{log_n}::{dtype_str}::forward"
+                        cell = _ROUTING_TABLE.get(key)
+                        if cell is not None and cell.get("route_to_cuda", False):
+                            warn_key = ("butterfly_multiply", log_n, dtype_str, "forward")
+                            if warn_key not in _routing_warning_emitted:
+                                _routing_warning_emitted.add(warn_key)
+                                log.warning(
+                                    "torch_structured: routing table marks "
+                                    "butterfly_multiply(log_n=%d, dtype=%s) as "
+                                    "route_to_cuda, but CUDA legacy backend is "
+                                    "unavailable; falling back to Triton (D-61b)",
+                                    log_n, dtype_str,
+                                )
+                    return _triton_bm(twiddle, input_, *args, **kwargs)
+
+                butterfly_multiply = _triton_with_cuda_missing_warning
         elif _has_cuda_legacy():
             from torch_structured._cuda_legacy import butterfly_multiply as _cuda_bm
             butterfly_multiply = _cuda_bm
@@ -442,6 +504,154 @@ def _is_deterministic_mode_active() -> bool:
     Python-attribute-access level).
     """
     return _DETERMINISTIC or torch.are_deterministic_algorithms_enabled()
+
+
+# ── Phase 9 09-03 runtime selector (D-66, D-66a, D-66b, D-66c, D-66d) ───
+# Static routing table baked from ``07-BASELINE.json`` by
+# ``scripts/regenerate_routing_table.py``. The resolver hook in ``_resolve()``
+# wraps the bound Triton kernel with a closure that consults
+# ``_should_route_to_cuda`` per-invocation; cells where Triton trails CUDA by
+# >40% (ratio > 1.67) route to the legacy CUDA path transparently. Users with
+# different hardware regenerate locally via ``scripts/regenerate_routing_table.py``.
+#
+# Test-time override: ``set_routing_enabled(False)`` disables routing for the
+# Phase 8 SC#4 reconciliation (D-61a + D-66c). Internal API — NOT exported
+# in ``torch_structured/__init__.py``.
+_ROUTING_DISABLED: bool = False
+
+# Per-process set tracking which (op, log_n, dtype, direction) cells have
+# emitted the "first-route" log message (D-66d). Avoids log spam in tight
+# kernel-call loops.
+_routing_log_emitted: "set[tuple]" = set()
+
+# Per-process set tracking which (op, log_n, dtype, direction) cells have
+# emitted the "CUDA missing — falling back to Triton" warning (D-61b).
+_routing_warning_emitted: "set[tuple]" = set()
+
+
+def _load_routing_table() -> dict:
+    """Load the static routing table from ``torch_structured/_routing.json``.
+
+    Phase 9 D-66 — read the keyed-object table at module import time. When the
+    file does not exist (e.g., a fresh checkout before
+    ``scripts/regenerate_routing_table.py`` has run), return an empty dict —
+    the selector then never routes, and ``butterfly_multiply`` behaves as the
+    pre-Phase-9-09-03 binding.
+
+    Pre-generation graceful fallback (D-66b): the file is committed to the
+    repo as part of Plan 09-03 Task 2, so users see the dev-host bake by
+    default. Custom hardware regen produces a new ``_routing.json``.
+
+    No try/except per CLAUDE.md ``no try/except in core lib`` — the
+    ``exists()`` check is the gate; the read itself raises only on malformed
+    JSON, which would be a packaging bug.
+    """
+    routing_path = pathlib.Path(__file__).parent / "_routing.json"
+    if not routing_path.exists():
+        log.warning(
+            "torch_structured: _routing.json not found at %s; "
+            "runtime selector will not route any cells (Phase 9 D-66 fallback)",
+            routing_path,
+        )
+        return {}
+    data = json.loads(routing_path.read_text())
+    return data.get("rules", {})
+
+
+_ROUTING_TABLE: dict = _load_routing_table()
+
+
+def _shape_to_log_n(shape: tuple) -> int:
+    """Derive ``log_n`` from the input tensor shape ``(batch, nstacks, n)``.
+
+    Phase 9 D-66b: when consumers call ``butterfly_multiply``, the natural
+    shape to consult at the resolver call site is the input — ``(batch,
+    nstacks, n)``. Twiddle shape ``(nstacks, nblocks, log_n, n//2, 2, 2)``
+    contains ``log_n`` directly as axis 2 but is less convenient at the
+    resolver call site (and is typed differently in the dispatch graph).
+
+    The last axis of the input is ``n`` (always a power of 2); return its
+    integer log_2.
+    """
+    n = shape[-1]
+    return int(math.log2(n))
+
+
+def _should_route_to_cuda(
+    op_name: str,
+    shape: tuple,
+    dtype: "torch.dtype",
+    direction: str,
+) -> bool:
+    """Consult the static routing table — should this call route to CUDA?
+
+    Phase 9 D-66a: returns True iff
+        (a) ``_ROUTING_DISABLED`` is False (D-66c — test override), AND
+        (b) the cell ``(op_name, log_n, dtype, direction)`` is present in
+            ``_ROUTING_TABLE`` AND has ``route_to_cuda: true``.
+
+    Emits a one-shot log.info per cell on the first True return (D-66d) so
+    a user inspecting logs can see which shapes are being routed without
+    log spam in tight inner loops.
+
+    The dtype string is "fp32" for fp32, "complex64" for complex64, else
+    ``str(dtype)``. The routing JSON only contains the first two; unknown
+    dtypes fall through with no routing.
+    """
+    if _ROUTING_DISABLED:
+        return False
+    if not _ROUTING_TABLE:
+        return False
+
+    log_n = _shape_to_log_n(shape)
+    if dtype == torch.float32:
+        dtype_str = "fp32"
+    elif dtype == torch.complex64:
+        dtype_str = "complex64"
+    else:
+        dtype_str = str(dtype)
+
+    key = f"{op_name}::{log_n}::{dtype_str}::{direction}"
+    cell = _ROUTING_TABLE.get(key)
+    if cell is None or not cell.get("route_to_cuda", False):
+        return False
+
+    # D-66d: emit first-route log once per (op, log_n, dtype, direction).
+    log_key = (op_name, log_n, dtype_str, direction)
+    if log_key not in _routing_log_emitted:
+        _routing_log_emitted.add(log_key)
+        log.info(
+            "torch_structured: routing %s(log_n=%d, dtype=%s, direction=%s) "
+            "to CUDA legacy backend (Triton/CUDA ratio %.2f > 1.67 per "
+            "_routing.json)",
+            op_name, log_n, dtype_str, direction,
+            cell.get("triton_cuda_ratio_p50") or cell.get("triton_torch_ref_ratio_p50") or float("nan"),
+        )
+    return True
+
+
+def set_routing_enabled(value: bool) -> bool:
+    """Test-time override: enable/disable the runtime routing selector (D-66c).
+
+    Returns the PREVIOUS value (save/restore pattern, mirrors ``set_backend``
+    and ``set_deterministic``).
+
+    Internal API — NOT exported in ``torch_structured/__init__.py``. The
+    Phase 8 SC#4 reconciliation test (D-61a) uses this to ensure the
+    monkey-patch shim is not bypassed by the routing closure.
+
+    Example::
+
+        prev = torch_structured._ops.set_routing_enabled(False)
+        try:
+            ...  # routing-bypass test body
+        finally:
+            torch_structured._ops.set_routing_enabled(prev)
+    """
+    global _ROUTING_DISABLED
+    prev = not _ROUTING_DISABLED  # invert: prev was 'enabled?'
+    _ROUTING_DISABLED = not bool(value)
+    return prev
 
 
 # ── Import-time resolution (DISP-03, DISP-05) ───────────────────────────
