@@ -2,10 +2,14 @@
 
 This module automates the TEST-04 perf gate by reading the committed baseline
 JSON at ``.planning/phases/07-butterfly-multiply-forward-triton/07-BASELINE.json``
-and asserting that every cell with non-null ``reference_cuda_p50`` has
-``wall_ms_p50 / reference_cuda_p50 ≤ 1.67`` (= 1/0.60 — Phase 9 D-65b). Cells
-where Triton trails CUDA by more than this margin route through the runtime
-selector (D-66) and are explicitly allowed (the routing table marks them).
+and asserting that every cell with non-null ``reference_cuda_p50`` AND non-null
+``do_bench_p50_ms`` has ``do_bench_p50_ms / reference_cuda_p50 ≤ 1.67``
+(= 1/0.60 — Phase 9 D-65b, amends Phase 9 D-65b). The gate uses
+``do_bench_p50_ms`` (the ``triton.testing.do_bench`` measurement, canonical per
+TEST-04 wording); the custom-harness ``wall_ms_p50`` is retained in the baseline
+only as a diagnostic. Cells where Triton trails CUDA by more than this margin
+route through the runtime selector (D-66) and are explicitly allowed (the
+routing table marks them).
 
 The selector unit tests verify ``_should_route_to_cuda`` and
 ``set_routing_enabled`` behave correctly on the dev-host bake.
@@ -38,18 +42,38 @@ def _load_baseline_rows() -> list:
 
 
 def test_perf_gate_triton_at_60pct_cuda():
-    """TEST-04 (D-65b): every cell with non-null reference_cuda_p50 must have
-    Triton wall_ms_p50 / reference_cuda_p50 ≤ 1.67. Cells exceeding the gate
+    """TEST-04 (D-65b, amends Phase 9 D-65b): every cell with non-null
+    reference_cuda_p50 AND non-null do_bench_p50_ms must have
+    do_bench_p50_ms / reference_cuda_p50 ≤ 1.67. Cells exceeding the gate
     are routed to CUDA via ``_routing.json`` and explicitly allowed (the
     routing table is the escape valve).
 
-    When ``reference_cuda_p50`` is null across the board (dev-host without
-    a working CUDA legacy build — Plan 09-01 SUMMARY documents this for the
-    Phase 9 dev environment), the test is a soft pass: nothing to gate, the
-    runtime selector falls back to torch-ref weaker gate (5.0×).
+    The gate uses ``do_bench_p50_ms`` — the ``triton.testing.do_bench``
+    measurement, canonical per the TEST-04 requirement wording. The custom
+    ``measure_p50_p95`` harness's ``wall_ms_p50`` is retained in the baseline
+    ONLY as a diagnostic: it systematically over-reports at small kernel sizes
+    because per-iteration ``torch.cuda.Event`` timing plus a full
+    ``torch.cuda.synchronize()`` dominates 30-250 µs kernels, running 47-91%
+    (up to ~11×) high versus do_bench. Using wall_ms_p50 in the ratio falsely
+    failed cells like ``11::fp32::forward`` at ~11× when its true do_bench
+    ratio is ~1.63× (passing). Hence the gate reads do_bench_p50_ms.
+
+    A row with ``do_bench_p50_ms is None`` is skipped (it is not gateable),
+    not crashed on. When ``reference_cuda_p50`` is null across the board
+    (dev-host without a working CUDA legacy build — Plan 09-01 SUMMARY
+    documents this for the Phase 9 dev environment), the test is a soft pass:
+    nothing to gate, the runtime selector falls back to torch-ref weaker gate
+    (5.0×).
     """
     rows = _load_baseline_rows()
-    cells_with_cuda = [r for r in rows if r.get("reference_cuda_p50") is not None]
+    # A cell is gateable only when it has BOTH a CUDA reference number and a
+    # do_bench number. A null do_bench → skip (no crash).
+    cells_with_cuda = [
+        r
+        for r in rows
+        if r.get("reference_cuda_p50") is not None
+        and r.get("do_bench_p50_ms") is not None
+    ]
 
     if not cells_with_cuda:
         pytest.skip(
@@ -66,7 +90,7 @@ def test_perf_gate_triton_at_60pct_cuda():
 
     failures: list[tuple] = []
     for row in cells_with_cuda:
-        ratio = row["wall_ms_p50"] / row["reference_cuda_p50"]
+        ratio = row["do_bench_p50_ms"] / row["reference_cuda_p50"]
         key = (
             f"{row['kernel']}::{row['log_n']}::{row['dtype']}"
             f"::{row.get('direction', 'forward')}"
@@ -84,7 +108,9 @@ def test_perf_gate_triton_at_60pct_cuda():
         f"route_to_cuda routing table):\n" +
         "\n".join(
             f"  {k}: ratio={r:.2f} "
-            f"(triton={row['wall_ms_p50']:.4f} ms, cuda={row['reference_cuda_p50']:.4f} ms)"
+            f"(triton(do_bench)={row['do_bench_p50_ms']:.4f} ms, "
+            f"cuda={row['reference_cuda_p50']:.4f} ms; "
+            f"diag wall_ms_p50={row['wall_ms_p50']:.4f} ms)"
             for k, r, row in failures
         )
     )
