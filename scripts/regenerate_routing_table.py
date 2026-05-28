@@ -90,7 +90,16 @@ def main() -> int:
         direction = row.get("direction", "forward")
         key = f"{kernel}::{log_n}::{dtype}::{direction}"
 
-        triton_p50 = row.get("wall_ms_p50")
+        # Use do_bench_p50_ms (triton.testing.do_bench — canonical per TEST-04
+        # wording) as the authoritative Triton measurement, NOT wall_ms_p50.
+        # The custom measure_p50_p95 harness over-reports 47-91% at small kernel
+        # sizes (per-iteration CUDA-Event + sync overhead), which would route
+        # nearly every cell to CUDA and defeat the Triton migration. Mirrors the
+        # TEST-04 gate fix (quick 260528-tv9). Falls back to wall_ms_p50 only if
+        # do_bench is unavailable. Amends Phase 9 D-65b / D-66.
+        triton_p50 = row.get("do_bench_p50_ms")
+        if triton_p50 is None:
+            triton_p50 = row.get("wall_ms_p50")
         cuda_p50 = row.get("reference_cuda_p50")
         torch_ref_p50 = row.get("reference_torch_ref_p50")
 

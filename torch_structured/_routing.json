@@ -1,89 +1,89 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-05-28T13:46:54.242438Z",
+  "generated_at": "2026-05-28T19:45:16.458074Z",
   "generated_from": ".planning/phases/07-butterfly-multiply-forward-triton/07-BASELINE.json",
   "threshold_ratio": 1.6666666666666667,
   "torch_ref_fallback_threshold": 5.0,
   "rules": {
     "butterfly_multiply::8::fp32::forward": {
-      "triton_torch_ref_ratio_p50": 0.4856,
+      "triton_cuda_ratio_p50": 0.5424,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::8::complex64::forward": {
-      "triton_torch_ref_ratio_p50": 0.6693,
+      "triton_cuda_ratio_p50": 0.792,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::9::fp32::forward": {
-      "triton_torch_ref_ratio_p50": 0.5266,
+      "triton_cuda_ratio_p50": 0.8854,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::9::complex64::forward": {
-      "triton_torch_ref_ratio_p50": 0.6846,
+      "triton_cuda_ratio_p50": 0.8471,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::10::fp32::forward": {
-      "triton_torch_ref_ratio_p50": 0.8891,
+      "triton_cuda_ratio_p50": 0.9492,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::10::complex64::forward": {
-      "triton_torch_ref_ratio_p50": 0.6869,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 1.7697,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::11::fp32::forward": {
-      "triton_torch_ref_ratio_p50": 0.6957,
+      "triton_cuda_ratio_p50": 1.6296,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::11::complex64::forward": {
-      "triton_torch_ref_ratio_p50": 0.9947,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 3.1923,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::8::fp32::backward": {
-      "triton_torch_ref_ratio_p50": 0.694,
+      "triton_cuda_ratio_p50": 0.6271,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::8::complex64::backward": {
-      "triton_torch_ref_ratio_p50": 1.4714,
+      "triton_cuda_ratio_p50": 0.8956,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::9::fp32::backward": {
-      "triton_torch_ref_ratio_p50": 0.6874,
+      "triton_cuda_ratio_p50": 0.8043,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::9::complex64::backward": {
-      "triton_torch_ref_ratio_p50": 0.9421,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 3.8986,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::10::fp32::backward": {
-      "triton_torch_ref_ratio_p50": 0.8375,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 3.2827,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::10::complex64::backward": {
-      "triton_torch_ref_ratio_p50": 0.6378,
+      "triton_cuda_ratio_p50": 1.584,
       "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::11::fp32::backward": {
-      "triton_torch_ref_ratio_p50": 0.8945,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 3.7063,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     },
     "butterfly_multiply::11::complex64::backward": {
-      "triton_torch_ref_ratio_p50": 0.7846,
-      "route_to_cuda": false,
-      "comparison_basis": "torch_ref_fallback"
+      "triton_cuda_ratio_p50": 4.6164,
+      "route_to_cuda": true,
+      "comparison_basis": "cuda"
     }
   }
 }
