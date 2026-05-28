@@ -30,8 +30,14 @@ except (ImportError, RuntimeError):
 HAS_CUDA_LEGACY_HADAMARD: bool = _hadamard_cuda_module is not None
 
 
-def hadamard_transform(u: torch.Tensor) -> torch.Tensor:
+def hadamard_transform(u: torch.Tensor, normalize: bool = False) -> torch.Tensor:
     """Pass-through to the compiled pybind11 ``hadamard_transform`` op.
+
+    Parameters:
+        u: Tensor of shape (..., n) where n is a power of 2
+        normalize: if True, divide the result by 2^{m/2} where m = log_2(n).
+    Returns:
+        product: Tensor of shape (..., n) — same shape as input
 
     Raises ``RuntimeError`` if the extension was not built — callers should
     probe ``HAS_CUDA_LEGACY_HADAMARD`` (or ``_ops._has_cuda_legacy_hadamard()``)
@@ -42,4 +48,10 @@ def hadamard_transform(u: torch.Tensor) -> torch.Tensor:
             "_hadamard_cuda not built — caller should use "
             "_has_cuda_legacy_hadamard() probe (D-22)"
         )
-    return _hadamard_cuda_module.hadamard_transform(u)
+    out = _hadamard_cuda_module.hadamard_transform(u)
+    if normalize:
+        n = u.shape[-1]
+        m = n.bit_length() - 1
+        assert n == 1 << m, 'n must be a power of 2'
+        out = out / 2 ** (m / 2)
+    return out
