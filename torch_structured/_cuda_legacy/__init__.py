@@ -14,22 +14,29 @@ may absorb the loader into _cuda_legacy/ when butterfly/__init__.py collapses
 import warnings
 
 # DeprecationWarning installation (Phase 10 D-74 / DEPR-02; verbatim from
-# 04-DEPRECATION-PLAN.md). The "once" filter suppresses repeats based on
-# (message, category) IGNORING module and line number — even if multiple call
-# sites import this module, the warning fires exactly once per process.
+# 04-DEPRECATION-PLAN.md). Once-per-process gating is implemented via a
+# module-level _WARNED flag rather than warnings.simplefilter("once") because
+# simplefilter() PREPENDS to warnings.filters and would override any prior
+# warnings.catch_warnings() + simplefilter("ignore", DeprecationWarning) wrap
+# (D-74b probe-silencing in _ops._has_cuda_legacy_for_op). With the flag
+# pattern, the probe's outer 'ignore' filter is still the first-match when
+# warnings.warn() runs, so the probe stays silent — and once the user-facing
+# path emits the warning, _WARNED=True prevents re-emission for the rest of
+# the process.
 # stacklevel=2 attributes the warning to the importer (e.g., _ops.py's
 # `from torch_structured._cuda_legacy import butterfly_multiply` line) rather
 # than to the warning line inside this module.
-warnings.simplefilter("once", DeprecationWarning)
-
-warnings.warn(
-    "torch_structured: the CUDA C++ backend (csrc/) is deprecated and will be "
-    "default-disabled in v1.3, with full removal in v1.4+. "
-    "Switch to TORCH_STRUCTURED_BACKEND=triton (default in v1.2). "
-    "See the v1.2 release notes for migration guidance.",
-    DeprecationWarning,
-    stacklevel=2,
-)
+_WARNED = False
+if not _WARNED:
+    warnings.warn(
+        "torch_structured: the CUDA C++ backend (csrc/) is deprecated and will be "
+        "default-disabled in v1.3, with full removal in v1.4+. "
+        "Switch to TORCH_STRUCTURED_BACKEND=triton (default in v1.2). "
+        "See the v1.2 release notes for migration guidance.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    _WARNED = True
 
 from .butterfly import butterfly_multiply  # noqa: F401, E402
 from .diag_mult import diag_mult  # noqa: F401, E402  — may raise RuntimeError if .so absent
