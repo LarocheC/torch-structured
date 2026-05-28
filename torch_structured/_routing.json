@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-28T13:46:54.242438Z",
+  "generated_from": ".planning/phases/07-butterfly-multiply-forward-triton/07-BASELINE.json",
+  "threshold_ratio": 1.6666666666666667,
+  "torch_ref_fallback_threshold": 5.0,
+  "rules": {
+    "butterfly_multiply::8::fp32::forward": {
+      "triton_torch_ref_ratio_p50": 0.4856,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::8::complex64::forward": {
+      "triton_torch_ref_ratio_p50": 0.6693,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::9::fp32::forward": {
+      "triton_torch_ref_ratio_p50": 0.5266,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::9::complex64::forward": {
+      "triton_torch_ref_ratio_p50": 0.6846,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::10::fp32::forward": {
+      "triton_torch_ref_ratio_p50": 0.8891,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::10::complex64::forward": {
+      "triton_torch_ref_ratio_p50": 0.6869,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::11::fp32::forward": {
+      "triton_torch_ref_ratio_p50": 0.6957,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::11::complex64::forward": {
+      "triton_torch_ref_ratio_p50": 0.9947,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::8::fp32::backward": {
+      "triton_torch_ref_ratio_p50": 0.694,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::8::complex64::backward": {
+      "triton_torch_ref_ratio_p50": 1.4714,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::9::fp32::backward": {
+      "triton_torch_ref_ratio_p50": 0.6874,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::9::complex64::backward": {
+      "triton_torch_ref_ratio_p50": 0.9421,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::10::fp32::backward": {
+      "triton_torch_ref_ratio_p50": 0.8375,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::10::complex64::backward": {
+      "triton_torch_ref_ratio_p50": 0.6378,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::11::fp32::backward": {
+      "triton_torch_ref_ratio_p50": 0.8945,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    },
+    "butterfly_multiply::11::complex64::backward": {
+      "triton_torch_ref_ratio_p50": 0.7846,
+      "route_to_cuda": false,
+      "comparison_basis": "torch_ref_fallback"
+    }
+  }
+}

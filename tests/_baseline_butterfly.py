@@ -5,7 +5,7 @@ the filename prevents pytest auto-collection. Invoke manually exactly once at
 end of Plan 07-02 execution to populate the JSON baseline that Phase 9
 TEST-04 (parity gate) reads verbatim.
 
-Schema (locked at CONTEXT.md D-43b — lines 66-69):
+Schema (locked at CONTEXT.md D-43b, extended by Phase 8 D-51 + Phase 9 D-65a + W2):
 
     {
       "rows": [
@@ -18,6 +18,8 @@ Schema (locked at CONTEXT.md D-43b — lines 66-69):
           "wall_ms_p50": <float>,
           "wall_ms_p95": <float>,
           "reference_torch_ref_p50": <float>,
+          "reference_cuda_p50": <float | null>,  # Phase 9 D-65a
+          "do_bench_p50_ms": <float | null>,     # Phase 9 W2 — triton.testing.do_bench sibling
           "measured_at": "<ISO8601 UTC>",
           "gpu": "<torch.cuda.get_device_name(0)>"
         },
@@ -53,6 +55,15 @@ import torch
 
 import torch_structured  # noqa: F401 — triggers extension load + _ops.py resolver
 from torch_structured._torch_ref.butterfly import butterfly_multiply_torch as butterfly_ref
+
+# Phase 9 D-65 (W2 — cross-correlation): use triton.testing.do_bench AS A
+# SIBLING column for the custom harness. The custom harness drives the gate
+# decision; do_bench_p50_ms is recorded alongside for cross-correlation per
+# RESEARCH §5. Guard import in case triton is somehow missing.
+try:
+    import triton.testing as _triton_testing
+except ImportError:
+    _triton_testing = None
 
 
 BASELINE_PATH = ".planning/phases/07-butterfly-multiply-forward-triton/07-BASELINE.json"
@@ -131,6 +142,44 @@ def main() -> int:
                     return butterfly_ref(twiddle, input_, True, n)
                 p50_ref, _ = measure_p50_p95(ref_call)
 
+                # Phase 9 D-65a: CUDA p50 measurement when _butterfly.so is built.
+                # Falls through to reference_cuda_p50=None when CUDA legacy is
+                # missing — the perf gate (D-65b) loosens to "Triton >= 60% of
+                # reference_torch_ref_p50" with the 5.0x threshold per Phase 7's
+                # documented torch-ref weaker gate.
+                p50_cuda = None
+                if torch_structured._ops._has_cuda_legacy():
+                    torch_structured._ops.set_backend("cuda")
+                    def cuda_call():
+                        return torch_structured._ops.butterfly_multiply(
+                            twiddle, input_, True, n
+                        )
+                    p50_cuda, _ = measure_p50_p95(cuda_call)
+                    # Restore Triton for the do_bench measurement below.
+                    torch_structured._ops.set_backend("triton")
+
+                # W2 — Phase 9 D-65 cross-correlation: ALSO measure the Triton
+                # path via triton.testing.do_bench. Satisfies the literal
+                # TEST-04 wording ("via triton.testing.do_bench") while keeping
+                # the custom harness as the gate driver. The do_bench result is
+                # the sibling column for cross-checking.
+                # RESEARCH §5 LANDMINE: warmup and rep are TIME budgets in
+                # MILLISECONDS, NOT iteration counts.
+                do_bench_p50 = None
+                if _triton_testing is not None:
+                    def triton_call_for_do_bench():
+                        return torch_structured._ops.butterfly_multiply(
+                            twiddle, input_, True, n
+                        )
+                    do_bench_result = _triton_testing.do_bench(
+                        triton_call_for_do_bench,
+                        warmup=25,        # ms
+                        rep=100,          # ms
+                        quantiles=[0.5, 0.95],
+                    )
+                    # do_bench returns a tuple (p50, p95) when quantiles given.
+                    do_bench_p50 = float(do_bench_result[0])
+
                 row = {
                     "kernel": "butterfly_multiply",
                     "dtype": dtype_name,
@@ -140,15 +189,35 @@ def main() -> int:
                     "wall_ms_p50": round(p50_triton, 6),
                     "wall_ms_p95": round(p95_triton, 6),
                     "reference_torch_ref_p50": round(p50_ref, 6),
+                    "reference_cuda_p50": (round(p50_cuda, 6) if p50_cuda is not None else None),
+                    "do_bench_p50_ms": (round(do_bench_p50, 6) if do_bench_p50 is not None else None),
                     "measured_at": datetime.datetime.now(datetime.timezone.utc)
                         .isoformat().replace("+00:00", "Z"),
                     "gpu": gpu_name,
                 }
                 rows.append(row)
+
+                # Cross-correlation diagnostic (W2) — surface any row where
+                # the custom harness and triton.testing.do_bench disagree by
+                # more than 15% (tolerance per tolerances block; do_bench has
+                # different sync semantics — small drift OK).
+                if do_bench_p50 is not None and p50_triton > 0:
+                    drift = abs(p50_triton - do_bench_p50) / p50_triton
+                    if drift > 0.15:
+                        print(
+                            f"  WARNING: log_n={log_n} dtype={dtype_name} "
+                            f"custom-harness p50={p50_triton:.4f} ms vs "
+                            f"do_bench p50={do_bench_p50:.4f} ms drift "
+                            f"{drift*100:.1f}% (>15%) — surface in 09-03-SUMMARY.md"
+                        )
+
+                cuda_str = f"cuda p50={p50_cuda:.4f} ms  " if p50_cuda is not None else "cuda p50=N/A  "
+                db_str = f"do_bench p50={do_bench_p50:.4f} ms  " if do_bench_p50 is not None else "do_bench p50=N/A  "
                 print(
                     f"  log_n={log_n} dtype={dtype_name:>9s}: "
                     f"triton p50={p50_triton:.4f} ms p95={p95_triton:.4f} ms  "
                     f"ref p50={p50_ref:.4f} ms  "
+                    f"{cuda_str}{db_str}"
                     f"speedup={p50_ref / p50_triton:.2f}x"
                 )
 

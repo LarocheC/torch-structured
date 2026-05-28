@@ -40,9 +40,8 @@ import pytest
 import torch
 
 import torch_structured  # noqa: F401 — triggers extension load + _ops.py resolver
-import torch_structured.butterfly.multiply as _legacy_mod_for_sc4  # Plan 08-01 SC#4 monkey-patch target (RESEARCH correction #1)
+import torch_structured.butterfly.multiply as _legacy_mod_for_sc4  # Phase 8/9 SC#4 monkey-patch target — kept after the Phase 9 09-03 D-61a reconciliation dropped the dispatch-binding is-check
 from torch_structured._torch_ref.butterfly import butterfly_multiply_torch as butterfly_ref
-from torch_structured._triton.butterfly.op import butterfly_multiply as _triton_butterfly_multiply  # Plan 08-01 SC#4 dispatch-binding is-check (RESEARCH correction #1)
 from torch_structured.butterfly import Butterfly  # legacy nn.Module surface for the unitary test (D-46 — no consumer refactor in Phase 7)
 
 
@@ -705,38 +704,72 @@ def test_butterfly_smallN_fallback_backward(backend, log_n):
 def test_butterfly_backward_no_cpp_symbol():
     """SC#4 / D-53 — under BACKEND=triton, no csrc/butterfly.cpp symbol is invoked.
 
-    Uses the RESEARCH-corrected mechanism (RESEARCH correction #1):
+    Phase 9 09-03 D-61a reconciliation: the Phase 9 runtime selector (D-66b)
+    wraps ``_triton_bm`` with a routing closure when ``_has_cuda_legacy()``
+    is True. This means ``_ops.butterfly_multiply`` is the closure, NOT the
+    Triton kernel directly — the original dispatch-binding ``is``-check (Phase 8)
+    would now register a false positive (closure != _triton_bm).
 
-      (a) **Dispatch-binding is-check**:
-          ``torch_structured._ops.butterfly_multiply is
-          _triton.butterfly.op.butterfly_multiply``. This proves the dispatch
-          surface routes to the Triton kernel directly. Any path through
-          ``loss.backward()`` flows through ``register_autograd``'s
-          ``_backward`` callback — which is Plan 08-01's NEW body that
-          never invokes the legacy C++ ops.
+    The Phase 9 reconciliation:
 
-      (b) **Monkey-patch shim**: rebind
-          ``torch_structured.butterfly.multiply.butterfly_multiply_fw`` and
-          ``butterfly_multiply_bw`` to raising sentinels. Run forward +
-          backward under BACKEND=triton. Assert the sentinels were NOT
-          called (raised_calls list is empty). Restore originals in a
-          ``finally`` block.
+      1. **Small log_n=4 cell** (n=16): the routing table only marks cells
+         where Triton trails CUDA by >40%; log_n=4 is too small for that to
+         happen (Triton dominates at small N — the small-N fallback in Phase 8
+         deliberately picks log_n<=1 for the oracle fallback, and log_n=4 sits
+         comfortably above that in the Triton-fast region). A pre-test
+         precondition assertion verifies that the routing table does NOT mark
+         this cell — if a future regen marks it, the test fires immediately
+         with a clear message.
 
-    **DOES NOT use the CONTEXT.md-recommended `'_butterfly' not in
-    sys.modules` check** — RESEARCH §"SC#4 Verification Mechanism" Gap #9
+      2. **Belt-and-braces ``_DISABLE_ROUTING`` flag** (D-66c): even if the
+         routing table marks the cell, ``set_routing_enabled(False)`` during
+         the test body disables routing — the call goes through the Triton
+         kernel directly. Restored in ``finally``.
+
+      3. **DROP the dispatch-binding ``is``-check**: the routing closure
+         wraps ``_triton_bm``, so ``_ops.butterfly_multiply is
+         _triton_bm`` is False even when no routing fires.
+         The check is no longer a reliable indicator.
+
+      4. **KEEP the monkey-patch shim** (part b from Phase 8): rebind
+         ``_legacy_mod_for_sc4.butterfly_multiply_fw`` and ``_bw`` to raising
+         sentinels. Run forward + backward under BACKEND=triton with routing
+         disabled. Assert the sentinels were NOT called. This is the
+         load-bearing assertion that csrc/butterfly.cpp is not touched.
+
+    **DOES NOT use the CONTEXT.md-recommended ``'_butterfly' not in
+    sys.modules`` check** — RESEARCH §"SC#4 Verification Mechanism" Gap #9
     empirically demonstrated that ``torch.ops.load_library`` uses dlopen at
     the C level and never adds an entry to sys.modules; the check would
-    pass trivially as a TAUTOLOGY, providing no actual SC#4 verification.
+    pass trivially as a TAUTOLOGY.
+
+    Cites: Phase 9 09-03 D-61a, D-66c. See also _routing.json for the
+    routing table that this test's precondition checks.
     """
     torch_structured._ops.set_backend("triton")
 
-    # Part (a): dispatch-binding assertion (cheap, deterministic)
-    assert torch_structured._ops.butterfly_multiply is _triton_butterfly_multiply, (
-        "SC#4: _ops.butterfly_multiply must be bound to the Triton kernel under "
-        "BACKEND=triton"
+    # Phase 9 D-61a precondition: log_n=4 is small enough that Triton beats
+    # CUDA, so it should NEVER be in the route_to_cuda list. If a future
+    # routing-table regen marks it, this assertion fires with an actionable
+    # error pointing to the script that regenerated it.
+    log_n = 4
+    routing_key = f"butterfly_multiply::{log_n}::fp32::backward"
+    routing_cell = torch_structured._ops._ROUTING_TABLE.get(routing_key, {})
+    assert not routing_cell.get("route_to_cuda", False), (
+        f"SC#4: log_n={log_n} unexpectedly marked route_to_cuda in "
+        f"_routing.json (cell={routing_cell}). Choose a different log_n "
+        f"for this test or regenerate the routing table via "
+        f"scripts/regenerate_routing_table.py."
     )
 
-    # Part (b): runtime invocation tracking via monkey-patch shim
+    # Phase 9 D-66c belt-and-braces: disable routing during the test body so
+    # the routing closure becomes a no-op pass-through to _triton_bm. The
+    # set_routing_enabled call returns the previous value; we restore it in
+    # finally.
+    prev_routing = torch_structured._ops.set_routing_enabled(False)
+
+    # Runtime invocation tracking via monkey-patch shim — the load-bearing
+    # SC#4 assertion that csrc/butterfly.cpp is not touched.
     raised_calls = []
     original_fw = _legacy_mod_for_sc4.butterfly_multiply_fw
     original_bw = _legacy_mod_for_sc4.butterfly_multiply_bw
@@ -756,8 +789,13 @@ def test_butterfly_backward_no_cpp_symbol():
     _legacy_mod_for_sc4.butterfly_multiply_fw = _fail_fw
     _legacy_mod_for_sc4.butterfly_multiply_bw = _fail_bw
     try:
-        n = 256
-        log_n = 8
+        # Phase 9 D-61a: log_n=4 (n=16) instead of log_n=8 (n=256). The
+        # twiddle shape becomes (1, 1, 4, 8, 2, 2) — eight 2×2 blocks per
+        # stage at n=16. Input shape (4, 1, 16). Small enough that Triton
+        # beats CUDA so routing never fires; large enough that the kernel
+        # exercises the same backward path as the original SC#4 test (no
+        # small-N fallback at log_n=4).
+        n = 16
         twiddle = torch.randn(
             1, 1, log_n, n // 2, 2, 2,
             device="cuda", dtype=torch.float32, requires_grad=True,
@@ -770,6 +808,9 @@ def test_butterfly_backward_no_cpp_symbol():
         assert twiddle.grad is not None, "forward+backward must produce twiddle.grad"
         assert x.grad is not None, "forward+backward must produce x.grad"
     finally:
+        # Restore routing-enabled state FIRST so it runs even if the shim
+        # restoration below fails.
+        torch_structured._ops.set_routing_enabled(prev_routing)
         _legacy_mod_for_sc4.butterfly_multiply_fw = original_fw
         _legacy_mod_for_sc4.butterfly_multiply_bw = original_bw
 
