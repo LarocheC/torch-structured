@@ -384,6 +384,66 @@ def set_backend(name: str) -> str:
     return actual
 
 
+# ── Phase 9 09-02 (D-63 + D-63a + D-63b + D-63c) ────────────────────────
+# Module-level deterministic-mode flag and helpers. Mirrors the shape of
+# ``set_backend`` — a single global mutated via a top-level setter that
+# returns the PREVIOUS value (save/restore pattern).
+_DETERMINISTIC: bool = False
+
+
+def set_deterministic(value: bool) -> bool:
+    """Toggle deterministic-mode for torch_structured Triton kernels (D-63).
+
+    Returns the PREVIOUS value (save/restore pattern, mirrors ``set_backend``).
+
+    Under deterministic mode, the butterfly_multiply backward routes through
+    ``butterfly_multiply_torch`` (the pure-PyTorch oracle) — slower but
+    deterministic because there is no atomicAdd reduction. Forward is
+    unaffected (no atomicAdd in forward; deterministic-by-construction via
+    the multi-launch tile structure).
+
+    Composes additively with ``torch.use_deterministic_algorithms(True)``
+    (D-63b): the deterministic path is active when EITHER
+    ``torch_structured._ops._DETERMINISTIC`` OR
+    ``torch.are_deterministic_algorithms_enabled()`` is True. Setting this
+    flag does NOT propagate to PyTorch's global determinism flag — users opt
+    into PyTorch's global determinism separately.
+
+    Implementation note (D-63a): the gate lives at the WRAPPER LEVEL in
+    ``torch_structured/_triton/butterfly/op.py:_backward`` — clones the
+    small-N fallback shape verbatim (``twiddle.detach().requires_grad_(True)``
+    + ``torch.enable_grad()`` + ``torch.autograd.grad`` against
+    ``_butterfly_multiply_torch``). No kernel-side constexpr specialization.
+
+    Example::
+
+        prev = torch_structured.set_deterministic(True)
+        try:
+            ...  # deterministic backward
+        finally:
+            torch_structured.set_deterministic(prev)
+    """
+    global _DETERMINISTIC
+    prev = _DETERMINISTIC
+    _DETERMINISTIC = bool(value)
+    return prev
+
+
+def _is_deterministic_mode_active() -> bool:
+    """Helper consumed by ``_triton/butterfly/op.py:_backward`` (D-63a + D-63b).
+
+    Returns True iff EITHER the library-level ``_DETERMINISTIC`` flag OR
+    PyTorch's global ``torch.are_deterministic_algorithms_enabled()`` is
+    True. Additive OR composition per D-63b — the two flags are independent;
+    activating either one routes the backward through the oracle.
+
+    Inlined as a one-liner to keep the call-path cheap (the gate is
+    consulted on every backward call; no measurable overhead at the
+    Python-attribute-access level).
+    """
+    return _DETERMINISTIC or torch.are_deterministic_algorithms_enabled()
+
+
 # ── Import-time resolution (DISP-03, DISP-05) ───────────────────────────
 _initial = os.environ.get("TORCH_STRUCTURED_BACKEND", "auto")
 _resolve(_initial)

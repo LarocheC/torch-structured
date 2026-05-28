@@ -1361,9 +1361,25 @@ def _backward(ctx, grad_out):
         correction #3 is the d_input conjugate-on-twiddle that fp32 tests
         silently pass but complex64 d_input parity catches).
     """
+    # Phase 9 D-63a: wrapper-level deterministic gate. When
+    # set_deterministic(True) OR torch.use_deterministic_algorithms(True) is
+    # active (D-63b additive OR), route through the pure-PyTorch oracle —
+    # deterministic by virtue of having no atomicAdd reordering. Identical
+    # body shape to the small-N fallback below (lines mirror the D-49b
+    # template verbatim). Local-scoped import avoids a module-import cycle:
+    # _ops.py imports from _triton for the resolver but the resolver itself
+    # does not need the deterministic helper.
+    from torch_structured._ops import _is_deterministic_mode_active
     twiddle, input_ = ctx.saved_tensors
     increasing_stride = ctx.increasing_stride
     output_size = ctx.output_size
+    if _is_deterministic_mode_active():
+        twiddle_d = twiddle.detach().requires_grad_(True)
+        input_d = input_.detach().requires_grad_(True)
+        with torch.enable_grad():
+            out = _butterfly_multiply_torch(twiddle_d, input_d, increasing_stride, output_size)
+        gt, gi = torch.autograd.grad(out, [twiddle_d, input_d], grad_out)
+        return gt, gi, None, None
 
     batch_size, nstacks, input_size = input_.shape
     nblocks = twiddle.shape[1]

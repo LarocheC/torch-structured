@@ -32,7 +32,7 @@ from .butterfly import (
 )
 from .factory import make_linear
 from .recurrent import LRU
-from ._ops import set_backend  # noqa: F401
+from ._ops import set_backend, set_deterministic  # noqa: F401
 
 __all__ = [
     'Butterfly',
@@ -43,5 +43,6 @@ __all__ = [
     'LRU',
     'make_linear',
     'set_backend',
+    'set_deterministic',
     '__version__',
 ]
