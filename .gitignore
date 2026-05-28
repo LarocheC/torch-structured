@@ -135,3 +135,9 @@ pyvenv.cfg
 pip-selfcheck.json
 
 # End of https://www.gitignore.io/api/python
+
+# Phase 9 09-03 D-66: re-include the source ``scripts/`` directory (the
+# virtualenv stack above ignores it because Windows venvs put binaries in
+# ``Scripts/``; ours is a checked-in source directory holding CLI tools).
+!/scripts/
+!/scripts/**
