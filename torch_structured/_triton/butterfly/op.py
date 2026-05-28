@@ -770,14 +770,26 @@ def _butterfly_backward_kernel(
 
     # Constexpr per-stage log_stride and stride literals. These reduce at
     # JIT time to integer constants for each STAGE_COUNT branch.
+    #
+    # IMPORTANT: when STAGE_COUNT < 3, the corresponding LOG_STRIDE_2 / STRIDE_2
+    # values are NOT used at runtime (the `if STAGE_COUNT == 3` branch is
+    # dead-code-eliminated by Triton). BUT — the Python-level `1 << ...`
+    # expression is evaluated at JIT time regardless of whether the branch
+    # executes; if LOG_STRIDE_2 is negative (e.g. when INCREASING_STRIDE=False
+    # and STAGE_START + 2 > LOG_N - 1), Python's `1 << negative` raises
+    # ValueError. To prevent this we clamp the unused slots to 0 (so STRIDE
+    # values are 1) via `max(..., 0)` — the resulting STRIDE_2 value is
+    # irrelevant because the surrounding `if STAGE_COUNT >= 2` / `if
+    # STAGE_COUNT == 3` guards prevent the corresponding _backward_one_stage
+    # call from executing.
     if INCREASING_STRIDE:
         LOG_STRIDE_0: tl.constexpr = STAGE_START + 0
-        LOG_STRIDE_1: tl.constexpr = STAGE_START + 1
-        LOG_STRIDE_2: tl.constexpr = STAGE_START + 2
+        LOG_STRIDE_1: tl.constexpr = max(STAGE_START + 1, 0) if STAGE_COUNT >= 2 else 0
+        LOG_STRIDE_2: tl.constexpr = max(STAGE_START + 2, 0) if STAGE_COUNT == 3 else 0
     else:
         LOG_STRIDE_0: tl.constexpr = LOG_N - 1 - STAGE_START - 0
-        LOG_STRIDE_1: tl.constexpr = LOG_N - 1 - STAGE_START - 1
-        LOG_STRIDE_2: tl.constexpr = LOG_N - 1 - STAGE_START - 2
+        LOG_STRIDE_1: tl.constexpr = max(LOG_N - 1 - STAGE_START - 1, 0) if STAGE_COUNT >= 2 else 0
+        LOG_STRIDE_2: tl.constexpr = max(LOG_N - 1 - STAGE_START - 2, 0) if STAGE_COUNT == 3 else 0
     STRIDE_0: tl.constexpr = 1 << LOG_STRIDE_0
     STRIDE_1: tl.constexpr = 1 << LOG_STRIDE_1
     STRIDE_2: tl.constexpr = 1 << LOG_STRIDE_2
