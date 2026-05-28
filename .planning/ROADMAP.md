@@ -179,9 +179,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- TBD
-- [ ] 09-02-PLAN.md -- TBD
-- [ ] 09-03-PLAN.md -- TBD
+- [ ] 09-01-PLAN.md -- §0 LANDMINE fix in butterfly/multiply.py (D-05 delegators) + 3-axis conftest backend fixture with per-op cuda skip-gate (D-62) + _has_cuda_legacy_for_op probe + tests/test_phase9_integration.py (backend agreement, v1.0/v1.1 checkpoint round-trip, make_linear/LRU smoke, public API regression detector, BACKEND=triton subprocess smoke)
+- [ ] 09-02-PLAN.md -- set_deterministic API (D-63) + wrapper-level oracle fallback in _backward (D-63a) + tests/test_torch_compile_triton.py (fullgraph=True + FakeTensorMode 260419-p27 gate) + tests/test_distributed_triton.py (DDP gloo single-process + FSDP1 NCCL @pytest.mark.multigpu + gradient checkpointing use_reentrant=False) + tests/test_deterministic_mode.py + .github/workflows/test.yml multigpu job
+- [ ] 09-03-PLAN.md -- _baseline_*.py CUDA p50 measurement + scripts/regenerate_routing_table.py + torch_structured/_routing.json + _should_route_to_cuda + resolver hook + tests/test_perf_grid.py TEST-04 gate + SC#4 reconciliation per D-61a (log_n=4 + _DISABLE_ROUTING) + README Triton-backend section + CHANGELOG.md (Keep a Changelog v1.1)
 
 ### Phase 10: CUDA Deprecation & flashmm Removal
 **Goal**: Triton ships as the default backend for v1.2; the CUDA path remains available but emits a `DeprecationWarning` pointing at the migration timeline; the `_flashmm` MathDx kernel is removed entirely (not ported); `csrc/`, `setup.py`, and `MANIFEST.in` stay in-tree this release pending the two-release deprecation cadence
@@ -192,6 +192,7 @@ Plans:
   2. The `_flashmm` module is removed from `torch_structured/`, `csrc/flashmm/` is deleted, and any references to it raise `ModuleNotFoundError` with a clear message; `pytest tests/` passes without any test referencing flashmm
   3. `setup.py`, `MANIFEST.in`, and `csrc/{butterfly,hadamard,diag_mult,cpu,cuda}/` remain in-tree and `uv pip install .` still compiles them when `FORCE_CUDA=1` is set, so users on the CUDA path keep a working fallback through v1.2 and v1.3
   4. README and CHANGELOG document the deprecation timeline (v1.2 default-Triton + warning, v1.3 default-disabled CUDA build, future milestone removes `csrc/`) so any user importing the CUDA path knows when they need to migrate
+
 **Plans**: 1 plan
 
 Plans:
