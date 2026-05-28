@@ -74,7 +74,6 @@ def get_pybind_extensions(with_cuda):
 
     - torch_structured._hadamard_cuda  (from structured-nets hadamard_cuda)
     - torch_structured._diag_mult_cuda (from structured-nets diag_mult_cuda)
-    - torch_structured._flashmm        (from m2 csrc/flashmm; opt-in via env var)
     """
     if not with_cuda:
         return []
@@ -105,46 +104,6 @@ def get_pybind_extensions(with_cuda):
                     str(diag_mult_dir / "diag_mult_cuda_kernel.cu"),
                 ],
                 extra_compile_args=extra_compile_args,
-            )
-        )
-
-    # flashmm is opt-in: requires MathDx 22.02 headers + two large kernel
-    # sources that are not vendored in-tree (see csrc/flashmm/README.md).
-    if os.getenv("TORCH_STRUCTURED_BUILD_FLASHMM", "0") == "1":
-        flashmm_dir = Path("csrc/flashmm")
-        mathdx_include = flashmm_dir / "mathdx" / "22.02" / "include"
-        mm_block_src = flashmm_dir / "mm_block_fwd_cuda.cu"
-        lut_header = flashmm_dir / "lut.h"
-
-        missing = [p for p in (mm_block_src, lut_header) if not p.exists()]
-        if missing:
-            names = ", ".join(str(p) for p in missing)
-            raise FileNotFoundError(
-                f"TORCH_STRUCTURED_BUILD_FLASHMM=1 but the following kernel "
-                f"sources are missing: {names}. Run "
-                f"`python csrc/flashmm/fetch_kernel_sources.py` first."
-            )
-
-        flashmm_compile_args = dict(extra_compile_args)
-        flashmm_compile_args["cxx"] = flashmm_compile_args.get("cxx", []) + ["-std=c++17"]
-        flashmm_compile_args["nvcc"] = flashmm_compile_args.get("nvcc", []) + [
-            "-std=c++17",
-            "-arch=compute_80",
-            "-gencode=arch=compute_80,code=sm_80",
-        ]
-        extensions.append(
-            CUDAExtension(
-                name="torch_structured._flashmm",
-                sources=[
-                    str(flashmm_dir / "flash_mm.cpp"),
-                    str(mm_block_src),
-                    str(flashmm_dir / "hyena_filter_cuda.cu"),
-                ],
-                include_dirs=[
-                    str(flashmm_dir),
-                    str(mathdx_include),
-                ],
-                extra_compile_args=flashmm_compile_args,
             )
         )
 

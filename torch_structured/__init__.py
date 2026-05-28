@@ -13,8 +13,8 @@ three subpackages:
 
 Importing compiled C++/CUDA extensions (``_butterfly``, ``_version``) happens
 inside the ``butterfly`` subpackage on first import; the other subpackages
-lazily try-import their own CUDA modules (``_hadamard_cuda``,
-``_diag_mult_cuda``, ``_flashmm``) when needed.
+lazily try-import their own CUDA modules (``_hadamard_cuda`` and
+``_diag_mult_cuda``) when needed.
 """
 
 __version__ = '0.4.0'

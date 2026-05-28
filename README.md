@@ -4,7 +4,7 @@ Consolidated PyTorch library of structured-matrix primitives:
 
 - **`torch_structured`** (core) — butterfly matrices for exact fast linear transforms (FFT, iFFT, DCT, DST, Hadamard, circulant, Toeplitz) as learnable `nn.Module` drop-in replacements for `nn.Linear`.
 - **`torch_structured.structured`** — low-displacement-rank layers ported from [structured-nets](https://github.com/HazyResearch/structured-nets): Toeplitz-like, Hankel, Vandermonde, Fastfood, Circulant, LDR subdiagonal / tridiagonal, Krylov utilities.
-- **`torch_structured.monarch`** — Monarch / block-diagonal-butterfly primitives ported from [m2](https://github.com/HazyResearch/m2): block-diagonal and block-diagonal-butterfly multiplies, structured linear layers, butterfly-factor helper, Hyena implicit long filter, and an opt-in fused flashmm CUDA kernel.
+- **`torch_structured.monarch`** — Monarch / block-diagonal-butterfly primitives ported from [m2](https://github.com/HazyResearch/m2): block-diagonal and block-diagonal-butterfly multiplies, structured linear layers, butterfly-factor helper, and Hyena implicit long filter.
 
 See the `NOTICE` file for upstream attributions and citations.
 
@@ -38,15 +38,6 @@ Built extensions (CUDA builds):
 - `torch_structured._butterfly`, `torch_structured._version` — core butterfly ops (torch.ops-style).
 - `torch_structured._hadamard_cuda` — fast Walsh-Hadamard transform (pybind module).
 - `torch_structured._diag_mult_cuda` — subdiagonal cycle-multiply helper (pybind module).
-
-### Optional: flashmm extension
-
-The Monarch Mixer fused `flashmm` kernel is opt-in because it requires NVIDIA MathDx 22.02 and extra kernel sources not vendored in this repo. See [`csrc/flashmm/README.md`](csrc/flashmm/README.md) for the full procedure:
-
-```bash
-python csrc/flashmm/fetch_kernel_sources.py
-TORCH_STRUCTURED_BUILD_FLASHMM=1 FORCE_CUDA=1 uv pip install -e .
-```
 
 ## Quickstart
 
@@ -165,13 +156,38 @@ python tests/_baseline_butterfly_backward.py   # regenerate backward perf grid
 python scripts/regenerate_routing_table.py     # rebake _routing.json
 ```
 
+## Deprecation timeline
+
+torch_structured ships Triton as the default backend in v1.2. The legacy CUDA
+C++ backend (`csrc/`) is being retired over a two-release deprecation cadence:
+
+- **v1.2 (current):** Triton is the default. `TORCH_STRUCTURED_BACKEND=cuda`
+  still works for users who built `_butterfly.so` / `_diag_mult.so` /
+  `_hadamard.so` locally, but emits a one-time `DeprecationWarning` at import
+  time pointing here. The Monarch Mixer MathDx kernel (previously
+  vendored under `csrc/`) is removed entirely in v1.2; see the CHANGELOG for
+  the full file list.
+- **v1.3 (next minor release, ~6 months out):** CUDA build is default-disabled.
+  `csrc/` extensions stay in the source tree and can still be compiled via
+  `FORCE_CUDA=1`, but the PyPI wheel does NOT include them. The
+  `DeprecationWarning` still fires when a locally-built CUDA path is used.
+- **v1.4+ (post-milestone):** `csrc/` tree, `setup.py` CUDA extension code,
+  and `_cuda_legacy/` are deleted. The standard 2-release deprecation cadence
+  gives users two minor releases to migrate.
+
+Migration: most users should set nothing and let the Triton default take over.
+If you have a workload that needs the CUDA backend (e.g., Volta sm_70 / Turing
+sm_75 hardware that Triton doesn't fully support), see the
+["Triton backend"](#triton-backend-v12) section above for hardware
+requirements; otherwise pin to v1.1.
+
 ## Tests
 
 ```bash
 pytest tests/
 ```
 
-CUDA-only and `_flashmm`-only tests are automatically skipped when the corresponding extension is not built.
+CUDA-only tests are automatically skipped when the corresponding extension is not built.
 
 ## Citation
 
