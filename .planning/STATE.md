@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Triton Migration
-status: executing
+status: Awaiting next milestone
 stopped_at: Phase 10 context gathered
-last_updated: "2026-05-28T17:23:35.765Z"
-last_activity: 2026-05-28 -- Quick task 260528-ui3: PyPI publishing prep complete
+last_updated: "2026-05-29T06:51:43.773Z"
+last_activity: 2026-05-29 — Milestone v1.2 completed and archived
 progress:
   total_phases: 10
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -20,15 +20,15 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-05-26)
 
-**Core value:** A single `uv pip install .` that just works -- with CUDA support when available (v1.2 evolves this to wheel-free Triton JIT)
-**Current focus:** Phase 10 — CUDA Deprecation & flashmm Removal
+**Core value:** A single `uv pip install torch-structured` that just works with zero compilation — Triton JIT backend, wheel-free, published to PyPI
+**Current focus:** v1.2 shipped (PyPI 1.2.0/1.2.1/1.2.2); awaiting next milestone (`/gsd-new-milestone`)
 
 ## Current Position
 
-Phase: 10 (CUDA Deprecation & flashmm Removal) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 10
-Last activity: 2026-05-29 -- Completed quick task 260529-bdr: closed both v1.2 audit defects (DEPR-02 leak + cuda-axis gates); 3-axis suite green
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-29 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -90,11 +90,20 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Begin Phase 5 (diag_mult Triton kernel) — Plan 5 will delete _demo_identity_op (per D-13) and extend conftest backend params to ["torch", "triton"]
+- Define the next milestone via `/gsd-new-milestone` (candidates: v1.3 default-disable CUDA build; v1.4+ delete csrc/; see PROJECT.md "Next Milestone Goals").
 
 ### Blockers/Concerns
 
 None.
+
+## Deferred Items
+
+Items acknowledged and deferred at v1.2 milestone close on 2026-05-29:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification | Phase 09 FSDP 2-GPU smoke (`test_fsdp_butterfly_smoke`, `@pytest.mark.multigpu`) | shipped + code-correct; never executed — needs ≥2 NCCL GPUs (env-limited) |
+| bookkeeping | Quick-task SUMMARYs missing `status:` frontmatter (260419-olu/p27/pya/v4b, 260528-tv9, etc.) | cosmetic; work complete + committed |
 
 ### Quick Tasks Completed
 
@@ -115,3 +124,7 @@ None.
 Last session: 2026-05-28T16:45:31.885Z
 Stopped at: Phase 10 context gathered
 Resume file: .planning/phases/10-cuda-deprecation-flashmm-removal/10-CONTEXT.md
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
