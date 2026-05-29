@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: 10 (CUDA Deprecation & flashmm Removal) — EXECUTING
 Plan: 1 of 1
 Status: Executing Phase 10
-Last activity: 2026-05-28 -- Completed quick task 260528-ui3: PyPI publishing prep (pure-Python wheel, v1.2.0, fork metadata)
+Last activity: 2026-05-29 -- Completed quick task 260529-bdr: closed both v1.2 audit defects (DEPR-02 leak + cuda-axis gates); 3-axis suite green
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ None.
 | 260528-te0 | Add normalize kwarg to _cuda_legacy/hadamard.py wrapper to match torch_ref and Triton backend signatures | 2026-05-28 | 342bdaa | [260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam](./quick/260528-te0-add-normalize-kwarg-to-cuda-legacy-hadam/) |
 | 260528-tv9 | Fix TEST-04 perf gate to use reliable do_bench_p50_ms instead of inflated custom-harness wall_ms_p50 | 2026-05-28 | 9f0fdbe | [260528-tv9-fix-test-04-perf-gate-to-use-reliable-do](./quick/260528-tv9-fix-test-04-perf-gate-to-use-reliable-do/) |
 | 260528-ui3 | PyPI publishing prep: gate CUDA build behind FORCE_CUDA=1 (pure-Python py3-none-any wheel), bump to 1.2.0, fork metadata, CHANGELOG links — build-verified, not published | 2026-05-28 | 8f0c2e8 | [260528-ui3-prepare-torch-structured-for-pypi-publis](./quick/260528-ui3-prepare-torch-structured-for-pypi-publis/) |
+| 260529-bdr | Fix v1.2 audit defects: DEPR-02 warning leak on default triton path (decoupled warn_cuda_deprecation emitter) + cuda-axis test gaps (sqrt(n) fp32 floor, fp64/complex cuda skips). 3-axis suite green (3042 passed, 0 fail). Verified 5/5. | 2026-05-29 | c6adc32 | [260529-bdr-fix-two-v1-2-audit-defects-depr-02-warni](./quick/260529-bdr-fix-two-v1-2-audit-defects-depr-02-warni/) |
 
 ## Session Continuity
 
