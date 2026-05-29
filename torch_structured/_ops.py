@@ -327,9 +327,20 @@ def _resolve(name: str) -> str:
             # it. No separate backward-direction hook is needed at the
             # resolver level.
             if _has_cuda_legacy():
-                from torch_structured._cuda_legacy import (
-                    butterfly_multiply as _cuda_bm_for_route,
-                )
+                # DEPR-02-leak: suppress the leak-site import's warning. This
+                # binding runs on the DEFAULT triton backend (routing-fallback
+                # closure), so importing _cuda_legacy here must NOT surface the
+                # user-facing DeprecationWarning — that is reserved for explicit
+                # set_backend('cuda') (D-74b). Mirrors the per-op probe
+                # suppression at _ops.py:133-139. (The warning is now an
+                # explicit warn_cuda_deprecation() call, so this suppressed
+                # import is also side-effect-free and does not consume the
+                # _WARNED gate against a later explicit-cuda selection.)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    from torch_structured._cuda_legacy import (
+                        butterfly_multiply as _cuda_bm_for_route,
+                    )
 
                 def _routed_butterfly_multiply(twiddle, input_, *args, **kwargs):
                     if _should_route_to_cuda(
@@ -378,7 +389,14 @@ def _resolve(name: str) -> str:
             from torch_structured._torch_ref.butterfly import butterfly_multiply_torch
             butterfly_multiply = butterfly_multiply_torch
     elif actual == "cuda":
-        from torch_structured._cuda_legacy import butterfly_multiply as _cuda_bm
+        # DEPR-02-leak / D-74b: explicit cuda selection — emit the user-facing
+        # DeprecationWarning here (at-most-once per process via the _WARNED gate
+        # inside warn_cuda_deprecation()).
+        from torch_structured._cuda_legacy import (
+            butterfly_multiply as _cuda_bm,
+            warn_cuda_deprecation,
+        )
+        warn_cuda_deprecation()
         butterfly_multiply = _cuda_bm
     else:  # actual == "torch"
         from torch_structured._torch_ref.butterfly import butterfly_multiply_torch
@@ -394,7 +412,10 @@ def _resolve(name: str) -> str:
         diag_mult = _triton_dm
         _diag_mult_backend = "triton"
     elif actual == "cuda" and _has_cuda_legacy_diag_mult():
+        # DEPR-02-leak / D-74b: explicit cuda selection — emit (idempotent).
+        from torch_structured._cuda_legacy import warn_cuda_deprecation
         from torch_structured._cuda_legacy.diag_mult import diag_mult as _cuda_dm
+        warn_cuda_deprecation()
         diag_mult = _cuda_dm
         _diag_mult_backend = "cuda"
     else:
@@ -413,7 +434,10 @@ def _resolve(name: str) -> str:
         hadamard_transform = _triton_ht
         _hadamard_transform_backend = "triton"
     elif actual == "cuda" and _has_cuda_legacy_hadamard():
+        # DEPR-02-leak / D-74b: explicit cuda selection — emit (idempotent).
+        from torch_structured._cuda_legacy import warn_cuda_deprecation
         from torch_structured._cuda_legacy.hadamard import hadamard_transform as _cuda_ht
+        warn_cuda_deprecation()
         hadamard_transform = _cuda_ht
         _hadamard_transform_backend = "cuda"
     else:
