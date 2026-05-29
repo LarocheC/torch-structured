@@ -17,7 +17,7 @@ lazily try-import their own CUDA modules (``_hadamard_cuda`` and
 ``_diag_mult_cuda``) when needed.
 """
 
-__version__ = '1.2.1'
+__version__ = '1.2.2'
 
 # The butterfly subpackage is imported eagerly because the top-level re-exports
 # its most common classes. The other subpackages are left for the user to

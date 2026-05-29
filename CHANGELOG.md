@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-05-29
+
+### Fixed
+
+- The CUDA-backend `DeprecationWarning` no longer fires on a bare
+  `import torch_structured` when the default Triton backend is active and a
+  legacy CUDA build happens to be present. It is now emitted only on explicit
+  CUDA selection (`set_backend("cuda")` / `TORCH_STRUCTURED_BACKEND=cuda`),
+  matching the intended deprecation semantics. The warning was decoupled from
+  module-import timing into an idempotent emitter.
+
+### Changed
+
+- Test suite only: the 3-axis backend-agreement gate `{torch, triton, cuda}`
+  now passes cleanly on matched-CUDA hardware. fp32 cross-backend tolerances
+  track the genuine fp32 accumulation noise floor, and fp64/complex gradchecks
+  skip the CUDA axis (the legacy CUDA kernels are fp32-real-only, like Triton).
+  No library behavior change.
+
 ## [1.2.1] - 2026-05-28
 
 ### Changed
@@ -103,6 +122,7 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.2
 [1.2.1]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.1
 [1.2.0]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.0
