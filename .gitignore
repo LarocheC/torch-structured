@@ -146,3 +146,9 @@ pip-selfcheck.json
 .dolt/
 *.db
 .beads-credential-key
+
+# Claude Code local agent state (worktrees, session scratch) — never commit
+.claude/
+
+# uv lockfile: this is a library, not an app — resolve deps fresh, don't pin
+uv.lock
