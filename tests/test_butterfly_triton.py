@@ -175,10 +175,14 @@ def test_butterfly_gradcheck_fp64(backend):
     so the torch-backend gradcheck IS testing the autograd plumbing for both
     backends.
     """
-    if backend == "triton":
+    if backend in ("triton", "cuda"):
+        # TEST-03-cuda-axis: legacy CUDA kernels are fp32/complex64-only (same
+        # as Triton per D-41); fp64 gradcheck on the cuda axis raises
+        # "butterfly_multiply_fw_cuda not implemented for 'Double'". The
+        # torch-backend gradcheck covers the identical D-47 autograd plumbing.
         pytest.skip(
-            "Triton kernel is fp32-only per D-41; fp64 gradcheck covered on "
-            "torch backend only — backward path is identical via D-47 oracle"
+            "Triton/legacy-CUDA kernels are fp32-only per D-41; fp64 gradcheck "
+            "covered on torch backend only — backward path is identical via D-47 oracle"
         )
     log_n, nstacks, nblocks, batch_size = 3, 1, 1, 2
     n = 1 << log_n
@@ -218,7 +222,16 @@ def test_butterfly_comprehensive(
     in {1,2} x increasing_stride in {True, False} x output_size_kind in
     {"n", "half", "n-1"}. ~720 cases per backend; satisfies SC#1 "full
     parameter grid" literally without slowing every-CI runs.
+
+    TEST-01-cuda-axis: seed for determinism. This forward comprehensive tier
+    was unseeded (unlike every backward comprehensive test in this file, which
+    all call manual_seed(0)); with random twiddle/input the log_n=11 fp32 noise
+    floor occasionally produces a small-magnitude output element whose abs error
+    exceeds the fixed atol=1e-3 envelope, making the test flaky on BOTH the
+    triton and cuda axes. Seeding makes the existing tolerance reproducible
+    without weakening it.
     """
+    torch.manual_seed(0)
     n = 1 << log_n
     output_size = {"n": n, "half": n // 2, "n-1": n - 1}[output_size_kind]
     batch_size = 4
@@ -302,7 +315,12 @@ def test_butterfly_eager_complex64_grid(
     compounds through log_n stages of complex multiply; the practical
     tolerance ``RTOL=ATOL=1e-3`` (module-level) accommodates the noise floor
     at log_n=11 while still rejecting any real implementation bug.
+
+    TEST-01-cuda-axis: seed for determinism (same rationale as the fp32
+    forward comprehensive tier above — flaky at log_n=11 on both axes when
+    unseeded; seeding does not weaken the tolerance).
     """
+    torch.manual_seed(0)
     n = 1 << log_n
     output_size = {"n": n, "half": n // 2, "n-1": n - 1}[output_size_kind]
     batch_size = 4
@@ -338,10 +356,14 @@ def test_butterfly_gradcheck_complex64(backend):
     ``.conj()`` manually; Phase 7 delegates the entire gradient to autograd
     inside the oracle's execution).
     """
-    if backend == "triton":
+    if backend in ("triton", "cuda"):
+        # TEST-03-cuda-axis: legacy CUDA kernels are fp32/complex64-only; the
+        # complex128 gradcheck raises "not implemented for 'ComplexDouble'" on
+        # the cuda axis. The torch-backend gradcheck exercises the same
+        # register_autograd backward (D-47).
         pytest.skip(
-            "Triton kernel is fp32/complex64 only; gradcheck on torch backend "
-            "exercises the same register_autograd backward (D-47)"
+            "Triton/legacy-CUDA kernels are fp32/complex64 only; gradcheck on "
+            "torch backend exercises the same register_autograd backward (D-47)"
         )
     log_n, nstacks, nblocks, batch_size = 3, 1, 1, 2
     n = 1 << log_n
@@ -457,11 +479,14 @@ def test_butterfly_backward_gradcheck_fp64(backend):
     closes this coverage gap at log_n=2, batch=4096 (where atomicAdd
     noise is load-bearing at realistic batch size).
     """
-    if backend == "triton":
+    if backend in ("triton", "cuda"):
+        # TEST-03-cuda-axis: legacy CUDA kernels are fp32/complex64-only (same
+        # as Triton); fp64 gradcheck on the cuda axis raises "not implemented
+        # for 'Double'". The torch-backend gradcheck covers the autograd plumbing.
         pytest.skip(
-            "Triton kernel is fp32/complex64 only; fp64 gradcheck on torch backend "
-            "covers the autograd plumbing — Triton-kernel-exerciser coverage is in "
-            "test_butterfly_backward_triton_smallcase_allclose (RESEARCH correction #4)"
+            "Triton/legacy-CUDA kernels are fp32/complex64 only; fp64 gradcheck on "
+            "torch backend covers the autograd plumbing — Triton-kernel-exerciser "
+            "coverage is in test_butterfly_backward_triton_smallcase_allclose (RESEARCH correction #4)"
         )
     log_n, nstacks, nblocks, batch_size = 2, 1, 1, 1
     n = 1 << log_n
@@ -1048,9 +1073,13 @@ def test_butterfly_backward_complex64_gradcheck_fp64(backend):
     because the kernel's register-arithmetic is fp32/complex64 only — gradcheck
     requires complex128 precision.
     """
-    if backend == "triton":
+    if backend in ("triton", "cuda"):
+        # TEST-03-cuda-axis: legacy CUDA kernels are fp32/complex64-only; the
+        # complex128 gradcheck raises "not implemented for 'ComplexDouble'" on
+        # the cuda axis. The torch-backend gradcheck verifies the Wirtinger
+        # plumbing both backends rely on.
         pytest.skip(
-            "Triton kernel is fp32/complex64 only; complex128 gradcheck on "
+            "Triton/legacy-CUDA kernels are fp32/complex64 only; complex128 gradcheck on "
             "torch backend verifies Wirtinger plumbing both backends rely on"
         )
     log_n, nstacks, nblocks, batch_size = 2, 1, 1, 1
