@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-05-31
+
+### Fixed
+
+- `Butterfly` (and `ButterflyUnitary`/`ButterflyBmm`) forward no longer raises
+  `AssertionError: input must be contiguous (Pitfall 3)` on CUDA for *expanding*
+  layers (`out_size > in_size`, i.e. `nstacks > 1`). `pre_process` produces a
+  stride-0 `.expand()` view, which the Triton kernel previously rejected; the
+  kernel now coerces inputs to contiguous (forward and the autograd-saved
+  tensors in `setup_context`), a no-op when already contiguous. This also
+  removes a CPU/CUDA divergence — the same expanding layer worked on CPU but
+  asserted on GPU. (torch-structured-7ny)
+
+### Documentation
+
+- README quickstart: corrected the transforms import to
+  `from torch_structured.butterfly.special import fft, hadamard`
+  (`torch_structured.special` is not a module).
+
 ## [1.2.3] - 2026-05-31
 
 ### Fixed
@@ -136,7 +155,8 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.4
 [1.2.3]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.3
 [1.2.2]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.2
 [1.2.1]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.1

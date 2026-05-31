@@ -1221,8 +1221,16 @@ def butterfly_multiply(
     assert twiddle.dtype == input.dtype, (
         f"twiddle.dtype ({twiddle.dtype}) must equal input.dtype ({input.dtype})"
     )
-    assert input.is_contiguous(), "input must be contiguous (Pitfall 3)"
-    assert twiddle.is_contiguous(), "twiddle must be contiguous (Pitfall 3)"
+    # Pitfall 3 (contiguity): the kernel + view_as_real boundary require
+    # contiguous inputs. Rather than asserting (which crashed on legitimate
+    # callers — e.g. Butterfly.forward passes a stride-0 .expand() view when
+    # nstacks > 1, i.e. out_size > in_size), COERCE here. A no-op when already
+    # contiguous; a contiguous copy of the same data otherwise. This also
+    # removes the CPU/CUDA divergence (the torch oracle already tolerated
+    # non-contiguous input). _setup_context saves contiguous copies so the
+    # autograd backward inherits the same guarantee. (bug torch-structured-7ny)
+    input = input.contiguous()
+    twiddle = twiddle.contiguous()
     # Phase 7 D-41 dtype gate. Plan 07-02 broadened the gate from fp32-only to
     # {float32, complex64} once the IS_COMPLEX=True kernel branch was lit up.
     assert input.dtype in (torch.float32, torch.complex64), (
@@ -1307,7 +1315,11 @@ def _setup_context(ctx, inputs, output):
     saved tensors, same scalar attributes.
     """
     twiddle, input_, increasing_stride, output_size = inputs
-    ctx.save_for_backward(twiddle, input_)
+    # Save contiguous copies so the Triton backward's view_as_real boundary
+    # (Pitfall 3 asserts at _backward) inherits the same contiguity guarantee
+    # the forward now coerces — setup_context receives the ORIGINAL op args,
+    # which may be a non-contiguous .expand() view (bug torch-structured-7ny).
+    ctx.save_for_backward(twiddle.contiguous(), input_.contiguous())
     ctx.increasing_stride = increasing_stride
     ctx.output_size = output_size
 

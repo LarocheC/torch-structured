@@ -46,7 +46,7 @@ Built extensions (CUDA builds):
 ```python
 import torch
 from torch_structured import Butterfly
-from torch_structured.special import fft, hadamard
+from torch_structured.butterfly.special import fft, hadamard
 
 layer = Butterfly(in_size=1024, out_size=1024)
 fft_layer = fft(1024)

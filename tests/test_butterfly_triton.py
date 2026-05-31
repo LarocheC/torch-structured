@@ -1309,3 +1309,48 @@ def test_butterfly_backward_comprehensive_complex64(
         f"out={output_size_kind}): err={err_i}, "
         f"rtol={rtol_scaled}, atol={atol_scaled}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression: bug torch-structured-7ny — Butterfly.forward passed a stride-0
+# .expand() view (non-contiguous) to the kernel when nstacks > 1 (out > in),
+# tripping the old `assert input.is_contiguous()`. The kernel now coerces
+# (forward + setup_context), so a non-contiguous input is accepted and matches
+# the contiguous result, and the expanding nn.Module forward/backward runs on
+# every backend axis.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("nstacks", [2, 3])
+def test_butterfly_noncontiguous_input_accepted(backend, nstacks):
+    """Kernel-boundary contract: a non-contiguous (stride-0 expand) input is
+    coerced and yields the same result as its contiguous copy."""
+    log_n = 8
+    n = 1 << log_n
+    nblocks, batch_size = 1, 4
+    twiddle = torch.randn(nstacks, nblocks, log_n, n // 2, 2, 2, device="cuda", dtype=torch.float32)
+    # Reproduce Butterfly.pre_process: unsqueeze(1).expand over the stacks dim
+    # gives a stride-0, non-contiguous view when nstacks > 1.
+    base = torch.randn(batch_size, n, device="cuda", dtype=torch.float32)
+    nc = base.unsqueeze(1).expand(batch_size, nstacks, n)
+    assert not nc.is_contiguous(), "test precondition: input must be non-contiguous"
+    out = torch_structured._ops.butterfly_multiply(twiddle, nc, True, n)
+    expected = butterfly_ref(twiddle, nc.contiguous(), True, n)
+    err = (out - expected).abs().max().item()
+    assert torch.allclose(out, expected, rtol=RTOL, atol=ATOL), (
+        f"non-contiguous input mismatch (backend={backend}, nstacks={nstacks}): max err = {err}"
+    )
+
+
+def test_butterfly_module_expanding_forward_backward(backend):
+    """End-to-end symptom from the bug report: Butterfly(in, out) with out>in
+    (=> nstacks>1) forward+backward must run on GPU without the contiguity
+    AssertionError, on every backend axis."""
+    layer = Butterfly(in_size=256, out_size=768, bias=True).cuda()
+    x = torch.randn(8, 256, device="cuda", requires_grad=True)
+    y = layer(x)
+    assert y.shape == (8, 768), f"expanding forward shape (backend={backend}): {tuple(y.shape)}"
+    assert torch.isfinite(y).all(), f"non-finite forward output (backend={backend})"
+    y.sum().backward()
+    assert x.grad is not None and torch.isfinite(x.grad).all(), (
+        f"non-finite/absent grad through expanding layer (backend={backend})"
+    )
