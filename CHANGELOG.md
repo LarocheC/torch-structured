@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-05-31
+
+### Fixed
+
+- `import torch_structured` no longer crashes when an ABI-incompatible compiled
+  extension is present on disk. Extension loading is now restricted to the
+  running interpreter's own extension suffixes (so a stale `.so` built for a
+  different Python — e.g. a `cpython-313` build under a 3.12 environment — is
+  ignored instead of selected), and a `load_library` failure (an
+  undefined-symbol `OSError` from a Python/PyTorch-ABI-mismatched `.so`) is now
+  caught and downgraded to a warning with a fallback to the Triton / pure-PyTorch
+  backend, rather than raising. Previously the graceful fallback only handled a
+  *missing* extension; a *present-but-incompatible* one was fatal.
+
 ## [1.2.2] - 2026-05-29
 
 ### Fixed
@@ -122,7 +136,8 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.3
 [1.2.2]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.2
 [1.2.1]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.1
 [1.2.0]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.0

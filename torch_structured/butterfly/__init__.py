@@ -8,6 +8,7 @@ extensions (``_butterfly`` and ``_version``) that live in the parent
 
 import os
 import glob
+import importlib.machinery
 import warnings
 
 import torch
@@ -30,13 +31,38 @@ def _load_extension(name):
     fall back to the Triton / pure-PyTorch backend (resolved in _ops.py, whose
     _has_cuda_legacy() probe returns False when the op is not registered). We do
     NOT raise here, so that `import torch_structured` keeps working without a .so.
+
+    Robustness (v1.2.3): we only consider files whose ABI suffix matches the
+    *running* interpreter (``importlib.machinery.EXTENSION_SUFFIXES``), so a
+    stale extension built for a different Python — e.g. a ``cpython-313`` .so
+    under a 3.12 venv — is never selected. And if ``load_library`` raises (an
+    ABI- or torch-version-incompatible .so surfaces as an undefined-symbol
+    ``OSError``), we treat it like a missing extension: warn and fall back,
+    rather than hard-crashing ``import torch_structured``.
     """
-    for suffix in ['*.so', '*.pyd', '*.dylib']:
-        pattern = os.path.join(_ext_dir, f'{name}{suffix}')
-        matches = glob.glob(pattern)
-        if matches:
+    # EXTENSION_SUFFIXES is interpreter- and platform-specific, e.g.
+    # ['.cpython-312-x86_64-linux-gnu.so', '.abi3.so', '.so'] (Linux) or the
+    # '.pyd' variants (Windows). Matching against it (no '*' wildcard before
+    # the suffix) excludes other interpreters' ABI tags by construction.
+    for suffix in importlib.machinery.EXTENSION_SUFFIXES:
+        matches = glob.glob(os.path.join(_ext_dir, f'{name}{suffix}'))
+        if not matches:
+            continue
+        try:
             torch.ops.load_library(matches[0])
             return True
+        except OSError as e:
+            warnings.warn(
+                f"torch_structured: found compiled extension "
+                f"'{os.path.basename(matches[0])}' but it failed to load "
+                f"({e}); falling back to the Triton / pure-PyTorch backend. "
+                "Rebuild the legacy CUDA backend against your current "
+                "Python/PyTorch with `FORCE_CUDA=1 pip install . "
+                "--no-build-isolation` if you need it.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return False
     return False
 
 
