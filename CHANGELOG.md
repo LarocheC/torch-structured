@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-09
+
 ### Added
 
 - `MonarchLinear` (`torch_structured/monarch/monarch_linear.py`): a genuine
@@ -57,8 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sizes, upper-bounding the composed dense-equivalent rank at `nblocks**2`. For
   a 400->1200 layer with `nblocks=4` the composed rank goes from 16 to the full
   400, the parameter count from 6400 to 160000, and the compression `saving`
-  from 0.013 to 0.333. The variance-matched init is unchanged and still exact
-  (`nblocks * in_blksz == in_features_extended` still holds).
+  from 0.013 to 0.333.
+- **`MonarchLinear` variance-matched init** corrected for the new fan-in. The
+  init scale depends on the two contraction fan-ins (`p` in `x @ w1^T`, `r` in
+  `out1 @ w2^T`), not on `k*q`; the rank fix changed `r` from `nblocks` to
+  `in_blksz`, so each factor is now rescaled by
+  `sqrt((in_features_extended / in_blksz**2) * v_target)` to restore the
+  dense-equivalent composed output variance (reduces to the previous
+  `sqrt(v_target)` under the old shapes). Guarded by the existing
+  `test_variance_matched_init_regression_guard`.
 
 ### Removed
 
@@ -231,7 +240,8 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/LarocheC/torch-structured/releases/tag/v1.3.0
 [1.2.5]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.5
 [1.2.4]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.4
 [1.2.3]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.3
