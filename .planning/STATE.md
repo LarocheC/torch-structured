@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-29 — Milestone v1.2 completed and archived
+Last activity: 2026-07-09 — Completed quick task 260709-ew0: Triton 3.3.x backward STRIDE constexpr fix
 
 ## Performance Metrics
 
@@ -118,6 +118,7 @@ Items acknowledged and deferred at v1.2 milestone close on 2026-05-29:
 | 260528-tv9 | Fix TEST-04 perf gate to use reliable do_bench_p50_ms instead of inflated custom-harness wall_ms_p50 | 2026-05-28 | 9f0fdbe | [260528-tv9-fix-test-04-perf-gate-to-use-reliable-do](./quick/260528-tv9-fix-test-04-perf-gate-to-use-reliable-do/) |
 | 260528-ui3 | PyPI publishing prep: gate CUDA build behind FORCE_CUDA=1 (pure-Python py3-none-any wheel), bump to 1.2.0, fork metadata, CHANGELOG links — build-verified, not published | 2026-05-28 | 8f0c2e8 | [260528-ui3-prepare-torch-structured-for-pypi-publis](./quick/260528-ui3-prepare-torch-structured-for-pypi-publis/) |
 | 260529-bdr | Fix v1.2 audit defects: DEPR-02 warning leak on default triton path (decoupled warn_cuda_deprecation emitter) + cuda-axis test gaps (sqrt(n) fp32 floor, fp64/complex cuda skips). 3-axis suite green (3042 passed, 0 fail). Verified 5/5. | 2026-05-29 | c6adc32 | [260529-bdr-fix-two-v1-2-audit-defects-depr-02-warni](./quick/260529-bdr-fix-two-v1-2-audit-defects-depr-02-warni/) |
+| 260709-ew0 | Fix Triton 3.3.x incompatibility in _butterfly_backward_kernel: host-compute STRIDE_0/1/2 constexprs (max()/ternary no longer evaluatable in @triton.jit body → ValueError 'Did you forget to add @triton.jit ?'). Behavior-preserving; parity sweep 40/40 on triton 3.7.0. | 2026-07-09 | e173410 | [260709-ew0-fix-triton-3-3-1-incompatibility-compute](./quick/260709-ew0-fix-triton-3-3-1-incompatibility-compute/) |
 
 ## Session Continuity
 
