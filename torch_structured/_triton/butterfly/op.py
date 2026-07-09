@@ -784,6 +784,9 @@ def _butterfly_backward_kernel(
     LOG_N: tl.constexpr,
     IS_COMPLEX: tl.constexpr,     # Plan 08-01 pre-wires per D-51a; gated by static_assert below
     TILE_N: tl.constexpr,
+    STRIDE_0: tl.constexpr,       # per-stage 1<<log_stride, host-computed (Triton 3.3.x compat)
+    STRIDE_1: tl.constexpr,       # unused slots are clamped to 1 on the host
+    STRIDE_2: tl.constexpr,
 ):
     """Plan 08-01 Triton backward kernel — reverse stage-group walk + per-program tl.sum reduce + tl.atomic_add(sem='relaxed') into fp32 scratch (D-50, D-50a, SC#3).
 
@@ -1073,31 +1076,23 @@ def _butterfly_backward_kernel(
     # inside the helper has a literal shape (D-50a).
     # ----------------------------------------------------------------------
 
-    # Constexpr per-stage log_stride and stride literals. These reduce at
-    # JIT time to integer constants for each STAGE_COUNT branch.
+    # Per-stage STRIDE (= 1 << log_stride) literals are now computed on the
+    # HOST at the backward launch site and passed in as the STRIDE_0/1/2
+    # constexpr kernel args. They used to be derived here via
+    #   LOG_STRIDE_k = max(..., 0) if STAGE_COUNT ... else 0 ; STRIDE_k = 1 << LOG_STRIDE_k
+    # but Triton 3.3.x's front-end cannot evaluate the Python ``max(...)``
+    # builtin / ``... if ... else ...`` ternary inside a @triton.jit body and
+    # raises ``ValueError('Did you forget to add @triton.jit ?')`` at the
+    # ``1 << LOG_STRIDE_0`` line. Every input to those expressions
+    # (STAGE_START, STAGE_COUNT, INCREASING_STRIDE, LOG_N) is a host-known
+    # constexpr, so the whole computation is hoisted out of the kernel — robust
+    # across Triton versions and mirroring how tile_n / num_warps are already
+    # host-computed. Unused slots (STAGE_COUNT < 2 / < 3) are clamped to 1 on
+    # the host; the surrounding ``if STAGE_COUNT >= 2`` / ``== 3`` guards
+    # dead-code-eliminate the corresponding helper calls anyway.
     #
-    # IMPORTANT: when STAGE_COUNT < 3, the corresponding LOG_STRIDE_2 / STRIDE_2
-    # values are NOT used at runtime (the `if STAGE_COUNT == 3` branch is
-    # dead-code-eliminated by Triton). BUT — the Python-level `1 << ...`
-    # expression is evaluated at JIT time regardless of whether the branch
-    # executes; if LOG_STRIDE_2 is negative (e.g. when INCREASING_STRIDE=False
-    # and STAGE_START + 2 > LOG_N - 1), Python's `1 << negative` raises
-    # ValueError. To prevent this we clamp the unused slots to 0 (so STRIDE
-    # values are 1) via `max(..., 0)` — the resulting STRIDE_2 value is
-    # irrelevant because the surrounding `if STAGE_COUNT >= 2` / `if
-    # STAGE_COUNT == 3` guards prevent the corresponding helper call from
-    # executing.
-    if INCREASING_STRIDE:
-        LOG_STRIDE_0: tl.constexpr = STAGE_START + 0
-        LOG_STRIDE_1: tl.constexpr = max(STAGE_START + 1, 0) if STAGE_COUNT >= 2 else 0
-        LOG_STRIDE_2: tl.constexpr = max(STAGE_START + 2, 0) if STAGE_COUNT == 3 else 0
-    else:
-        LOG_STRIDE_0: tl.constexpr = LOG_N - 1 - STAGE_START - 0
-        LOG_STRIDE_1: tl.constexpr = max(LOG_N - 1 - STAGE_START - 1, 0) if STAGE_COUNT >= 2 else 0
-        LOG_STRIDE_2: tl.constexpr = max(LOG_N - 1 - STAGE_START - 2, 0) if STAGE_COUNT == 3 else 0
-    STRIDE_0: tl.constexpr = 1 << LOG_STRIDE_0
-    STRIDE_1: tl.constexpr = 1 << LOG_STRIDE_1
-    STRIDE_2: tl.constexpr = 1 << LOG_STRIDE_2
+    # IDX_0/1/2 stay in-kernel: plain ``STAGE_START + k`` constexpr addition is
+    # front-end-safe (the forward kernel uses the same form at op.py:230).
     IDX_0: tl.constexpr = STAGE_START + 0
     IDX_1: tl.constexpr = STAGE_START + 1
     IDX_2: tl.constexpr = STAGE_START + 2
@@ -1533,6 +1528,25 @@ def _backward(ctx, grad_out):
             n_row_tiles = n // tile_n
             grid = (n_row_tiles, batch_size * nstacks)
             num_warps = _pick_num_warps(tile_n)
+            # Host-compute the per-stage STRIDE (= 1 << log_stride) constexprs
+            # the kernel used to derive internally. Hoisting this out of the
+            # @triton.jit body sidesteps the Triton 3.3.x front-end regression
+            # on the max()/ternary constexpr pattern. Mirrors the kernel's old
+            # formula verbatim; unused slots (counter_count < 2 / < 3) are
+            # clamped to log_stride 0 so ``1 << ...`` never sees a negative
+            # shift and the resulting STRIDE (=1) is inert (the kernel's
+            # STAGE_COUNT guards drop those stages).
+            if cur_increasing_stride:
+                log_stride_0 = group_start + 0
+                log_stride_1 = max(group_start + 1, 0) if counter_count >= 2 else 0
+                log_stride_2 = max(group_start + 2, 0) if counter_count == 3 else 0
+            else:
+                log_stride_0 = log_n - 1 - group_start - 0
+                log_stride_1 = max(log_n - 1 - group_start - 1, 0) if counter_count >= 2 else 0
+                log_stride_2 = max(log_n - 1 - group_start - 2, 0) if counter_count == 3 else 0
+            stride_0 = 1 << log_stride_0
+            stride_1 = 1 << log_stride_1
+            stride_2 = 1 << log_stride_2
             # IMPORTANT: trail[i] holds the OUTPUT of forward launch i = the
             # INPUT to forward launch i+1. For the backward of forward launch
             # `launch_idx_global`, we need the activation INPUT to that
@@ -1563,6 +1577,9 @@ def _backward(ctx, grad_out):
                 LOG_N=log_n,
                 IS_COMPLEX=is_complex,
                 TILE_N=tile_n,
+                STRIDE_0=stride_0,
+                STRIDE_1=stride_1,
+                STRIDE_2=stride_2,
                 num_warps=num_warps,
             )
             src_grad, dst_grad = dst_grad, src_grad
