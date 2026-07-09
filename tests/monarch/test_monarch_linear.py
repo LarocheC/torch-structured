@@ -86,6 +86,34 @@ def test_full_mixing_every_output_depends_on_every_input_block():
             )
 
 
+def test_composed_weight_reaches_full_rank():
+    """Regression guard for the intermediate-width rank bottleneck: for a
+    non-square shape the composed dense-equivalent weight must reach full rank
+    min(in, out). Before the fix the two intermediate block dims were set to
+    nblocks (q = r = nblocks), capping the intermediate width -- and hence the
+    composed rank -- at nblocks**2 (a fixed 16 for nblocks=4) regardless of the
+    feature sizes. Setting q = r = in_blksz removes that cap."""
+    torch.manual_seed(0)
+    in_f, out_f, nblocks = 400, 1200, 4
+    lin = MonarchLinear(in_f, out_f, nblocks=nblocks, bias=True)
+    W = lin.convert_to_dense_weight()  # (out, in) == (1200, 400)
+    assert W.shape == (out_f, in_f)
+    # Count genuinely-nonzero singular values with an explicit relative
+    # tolerance. The composed map is full-rank by construction, but a random
+    # draw can leave one singular value a few 1e-5 below sigma_max, which the
+    # DEFAULT matrix_rank tolerance rounds off (giving 399). rtol=1e-6
+    # distinguishes those genuinely-nonzero values from the ~1e-16 structural
+    # zeros a rank bottleneck would produce (which would drop rank to
+    # nblocks**2 == 16, far below any tolerance choice).
+    rank = torch.linalg.matrix_rank(W, rtol=1e-6).item()
+    assert rank == min(in_f, out_f), (
+        f"composed dense-equivalent rank {rank} != min(in, out) "
+        f"{min(in_f, out_f)}; a rank near nblocks**2 ({nblocks ** 2}) means the "
+        "intermediate-width rank bottleneck has regressed (q=r must be in_blksz, "
+        "not nblocks)"
+    )
+
+
 def test_variance_matched_init_regression_guard():
     """Regression guard for a real bug caught during development: naively
     Kaiming-initializing w1 and w2 independently compounds the
