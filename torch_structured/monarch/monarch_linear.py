@@ -59,31 +59,49 @@ class MonarchLinear(StructuredLinear):
 
         Naively Kaiming-initializing w1 and w2 independently (each "correctly"
         scaled for its own fan-in) compounds the variance-preservation twice,
-        undershooting the correct composed variance by ~3600x for a
-        400->1200 shape (measured) -- since w1/w2 are two halves of ONE linear
-        map with no nonlinearity between them, not a 2-layer MLP. Instead,
-        measure the empirical per-element variance dense_init_fn_ would
-        produce on a plain (out_features_extended, in_features_extended)
+        undershooting the correct composed variance by orders of magnitude for
+        a 400->1200 shape (measured) -- since w1/w2 are two halves of ONE
+        linear map with no nonlinearity between them, not a 2-layer MLP.
+        Instead, measure the empirical per-element variance dense_init_fn_
+        would produce on a plain (out_features_extended, in_features_extended)
         tensor, then rescale both factors (after their own dense_init_fn_
         draw, which only sets their *shape* of randomness, not scale) so the
-        COMPOSED output variance matches that target:
-        Var(out) = nblocks * in_blksz * Var(w1) * Var(w2) * Var(x)
-        (nblocks * in_blksz == in_features_extended exactly, by construction),
-        so setting Var(w1) = Var(w2) = sqrt(v_target) makes
-        Var(out) = in_features_extended * v_target * Var(x), matching a plain
-        dense/BlockdiagLinear-equivalent layer.
+        COMPOSED output variance matches that target.
+
+        The two-factor map contracts twice: out1 = x @ w1^T sums over p
+        (fan-in `in_blksz`), then out2 = out1' @ w2^T sums over r (fan-in
+        `in_blksz`, since q = r = in_blksz -- see __init__). Hence
+        Var(out) = p * r * Var(w1) * Var(w2) * Var(x)
+                 = in_blksz**2 * Var(w1) * Var(w2) * Var(x).
+        A plain dense-equivalent layer has fan-in in_features_extended
+        (= nblocks * in_blksz), giving Var_dense(out) = in_features_extended *
+        v_target * Var(x). Matching the two requires
+        Var(w1) * Var(w2) = (in_features_extended / (p * r)) * v_target
+                          = (nblocks / in_blksz) * v_target,
+        so we set each factor's per-element variance to
+        target = sqrt((in_features_extended / (in_blksz * in_blksz)) *
+        v_target). (Note: with the pre-rank-fix shapes q = r = nblocks the
+        second fan-in was `nblocks`, making p * r == in_features_extended and
+        target collapse to sqrt(v_target); the extra ratio here compensates
+        exactly for the wider intermediate dimension introduced by the rank
+        fix.)
         """
         device, dtype = self.w1.device, self.w1.dtype
         dense_ref = torch.empty(self.out_features_extended, self.in_features_extended,
                                 device=device, dtype=dtype)
         dense_init_fn_(dense_ref)
         v_target = dense_ref.pow(2).mean()
+        # Composed fan-in of the two contractions is p * r == in_blksz ** 2;
+        # a plain dense layer's fan-in is in_features_extended. Scale each
+        # factor's variance so the composed output variance matches the dense
+        # target rather than in_blksz ** 2 / in_features_extended times too large.
+        fan_in_ratio = self.in_features_extended / (self.in_blksz * self.in_blksz)
         with torch.no_grad():
             dense_init_fn_(self.w1)
             dense_init_fn_(self.w2)
             v1 = self.w1.pow(2).mean().clamp_min(1e-12)
             v2 = self.w2.pow(2).mean().clamp_min(1e-12)
-            target = v_target.sqrt()
+            target = (fan_in_ratio * v_target).sqrt()
             self.w1.mul_((target / v1).sqrt())
             self.w2.mul_((target / v2).sqrt())
 
