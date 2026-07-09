@@ -24,11 +24,23 @@ from .blockdiag_butterfly_multiply import blockdiag_butterfly_multiply
 class MonarchLinear(StructuredLinear):
 
     def __init__(self, *args, nblocks=4, **kwargs):
-        """Two factors w1 (k=nblocks, q=nblocks, p=in_blksz) and
-        w2 (l=nblocks, s=out_blksz, r=nblocks), with the shared block count
-        `nblocks` used for both q and r -- this trivially satisfies the
-        primitive's only two shape constraints (k*p==n, l*r==k*q) for any
-        in_features/out_features, with no factor search needed.
+        """Two factors w1 (k=nblocks, q=in_blksz, p=in_blksz) and
+        w2 (l=nblocks, s=out_blksz, r=in_blksz), i.e. q = r = in_blksz.
+
+        The primitive's only two shape constraints are k*p == n (input) and
+        l*r == k*q (intermediate width matches). With k == l == nblocks, the
+        second constraint forces r == q. Choosing q = r = in_blksz makes the
+        intermediate width k*q == nblocks * in_blksz == in_features_extended,
+        i.e. as wide as the (padded) input itself.
+
+        Setting q = r = nblocks instead (the previous formulation) capped the
+        intermediate width at nblocks**2 (a fixed 16 for nblocks=4) regardless
+        of feature sizes, which upper-bounds the composed dense-equivalent rank
+        at nblocks**2 -- a severe rank bottleneck for any layer wider than
+        nblocks**2. Using in_blksz for the intermediate dim removes that
+        bottleneck: the composed map can reach full rank min(in, out) for any
+        shape, at the cost of the larger (and correct) two-factor parameter
+        count.
         """
         super().__init__(*args, **kwargs)
         b = nblocks
@@ -38,8 +50,8 @@ class MonarchLinear(StructuredLinear):
         self.in_blksz, self.out_blksz = in_blksz, out_blksz
         self.in_features_extended = b * in_blksz
         self.out_features_extended = b * out_blksz
-        self.w1 = nn.Parameter(torch.empty(b, b, in_blksz))
-        self.w2 = nn.Parameter(torch.empty(b, out_blksz, b))
+        self.w1 = nn.Parameter(torch.empty(b, in_blksz, in_blksz))
+        self.w2 = nn.Parameter(torch.empty(b, out_blksz, in_blksz))
         self.reset_parameters()
 
     def set_weights_from_dense_init(self, dense_init_fn_):
