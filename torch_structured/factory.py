@@ -3,12 +3,12 @@
 Supported kinds:
     - "dense"     : torch.nn.Linear
     - "butterfly" : torch_structured.Butterfly (signature normalized to (x) -> y)
-    - "monarch"   : torch_structured.monarch.blockdiag_linear.BlockdiagLinear
-                    (single block-diagonal factor -- no permutation, zero
-                    cross-block mixing by construction)
-    - "monarch2"  : torch_structured.monarch.monarch_linear.MonarchLinear
+    - "monarch"   : torch_structured.monarch.monarch_linear.MonarchLinear
                     (genuine two-factor Monarch: block-diagonal x permutation
                     x block-diagonal, full cross-channel mixing by construction)
+    - "blockdiag" : torch_structured.monarch.blockdiag_linear.BlockdiagLinear
+                    (single block-diagonal factor -- no permutation, zero
+                    cross-block mixing by construction)
     - "circulant" : custom rfft-based circulant; requires square power-of-2 size
 
 Unknown kinds raise ValueError; "ldr"/"fastfood" raise NotImplementedError to
@@ -84,8 +84,10 @@ class _CirculantLinear(nn.Module):
         return y
 
 
-class _MonarchLinear(nn.Module):
-    """Wrap BlockdiagLinear with a sane default for nblocks on small H.
+class _BlockdiagLinear(nn.Module):
+    """Wrap BlockdiagLinear (the single block-diagonal factor -- no
+    permutation, zero cross-block mixing) as the `"blockdiag"` kind, with a
+    sane default for nblocks on small H.
 
     nblocks defaults to min(4, in, out) so H<4 doesn't crash. If the caller
     explicitly passes nblocks via kwargs, we honor their choice.
@@ -101,9 +103,11 @@ class _MonarchLinear(nn.Module):
         return self.bd(x)
 
 
-class _MonarchTwoFactorLinear(nn.Module):
-    """Wrap MonarchLinear with the same small-H nblocks safety default as
-    _MonarchLinear above.
+class _MonarchLinear(nn.Module):
+    """Wrap the genuine two-factor MonarchLinear (block-diagonal x permutation
+    x block-diagonal, full cross-channel mixing by construction) as the
+    `"monarch"` kind, with the same small-H nblocks safety default as
+    _BlockdiagLinear above.
     """
 
     def __init__(self, in_features: int, out_features: int, bias: bool = True, **kwargs):
@@ -116,7 +120,7 @@ class _MonarchTwoFactorLinear(nn.Module):
         return self.m(x)
 
 
-_SUPPORTED = ("dense", "butterfly", "monarch", "monarch2", "circulant")
+_SUPPORTED = ("dense", "butterfly", "monarch", "blockdiag", "circulant")
 _NOT_WIRED = ("ldr", "fastfood")
 
 
@@ -131,10 +135,10 @@ def make_linear(
     """Build an (x) -> y linear-like nn.Module of the requested kind.
 
     Parameters:
-        kind: one of {"dense", "butterfly", "monarch", "monarch2", "circulant"}.
+        kind: one of {"dense", "butterfly", "monarch", "blockdiag", "circulant"}.
         in_features, out_features: standard nn.Linear sizes.
         bias: include additive bias (keyword-only).
-        **kwargs: forwarded to the underlying constructor (e.g. nblocks for monarch/monarch2).
+        **kwargs: forwarded to the underlying constructor (e.g. nblocks for monarch/blockdiag).
 
     Returns:
         nn.Module with forward(x) -> y of shape (..., out_features).
@@ -145,8 +149,8 @@ def make_linear(
         return _ButterflyLinear(in_features, out_features, bias=bias)
     if kind == "monarch":
         return _MonarchLinear(in_features, out_features, bias=bias, **kwargs)
-    if kind == "monarch2":
-        return _MonarchTwoFactorLinear(in_features, out_features, bias=bias, **kwargs)
+    if kind == "blockdiag":
+        return _BlockdiagLinear(in_features, out_features, bias=bias, **kwargs)
     if kind == "circulant":
         return _CirculantLinear(in_features, out_features, bias=bias)
     if kind in _NOT_WIRED:
