@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-07-09
+
+### Fixed
+
+- Triton backward (`_butterfly_backward_kernel`) no longer fails to compile on
+  Triton 3.3.x with `ValueError: Did you forget to add @triton.jit ?`. The
+  per-stage `STRIDE` `tl.constexpr` values were computed inside the
+  `@triton.jit` body using the Python `max()` builtin and a `... if ... else`
+  ternary, which the Triton 3.3.x front-end can no longer evaluate in constexpr
+  context. Since every input is host-known, the computation is hoisted to the
+  kernel launch site and the strides are passed in as constexpr kernel args
+  (`STRIDE_0/1/2`) — matching how `tile_n`/`num_warps` are already
+  host-computed. Behavior-preserving: forward + backward parity vs the
+  pure-PyTorch oracle holds across fp32/complex64, `nblocks` 1/2,
+  `increasing_stride` True/False, `log_n` 2..7 (verified on Triton 3.7.0, where
+  the old form still compiled).
+
 ## [1.2.4] - 2026-05-31
 
 ### Fixed
@@ -155,7 +172,8 @@ while preserving full backward compatibility with the legacy CUDA C++ path.
 - **Volta (sm_70 — V100, Titan V) and Turing (sm_75 — T4, RTX 20xx):**
   pin to v1.1 or use the CUDA backend.
 
-[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/LarocheC/torch-structured/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.5
 [1.2.4]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.4
 [1.2.3]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.3
 [1.2.2]: https://github.com/LarocheC/torch-structured/releases/tag/v1.2.2
