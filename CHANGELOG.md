@@ -13,15 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two-factor Monarch linear layer (block-diagonal x permutation x
   block-diagonal, per Dao et al. ICML 2022), built on the existing
   `blockdiag_butterfly_multiply` primitive. Gives full cross-channel mixing
-  by construction, unlike the existing single-factor `"monarch"` kind
-  (`BlockdiagLinear`), which has zero cross-block information flow. Uses a
-  variance-matched two-factor init (naively Kaiming-initializing each factor
-  independently undershoots the correct composed output variance by ~3600x
-  for a 400->1200 shape — regression-guarded by
+  by construction, unlike the single block-diagonal factor `BlockdiagLinear`
+  (now the `"blockdiag"` kind), which has zero cross-block information flow.
+  Uses a variance-matched two-factor init (naively Kaiming-initializing each
+  factor independently undershoots the correct composed output variance by
+  ~3600x for a 400->1200 shape — regression-guarded by
   `tests/monarch/test_monarch_linear.py::test_variance_matched_init_regression_guard`).
-- New `"monarch2"` kind in `torch_structured/factory.py::make_linear`, wrapping
-  `MonarchLinear` with the same small-`H` `nblocks` safety default as the
-  existing `"monarch"` kind.
+- New `"blockdiag"` kind in `torch_structured/factory.py::make_linear`,
+  wrapping the single block-diagonal-factor `BlockdiagLinear` (no permutation,
+  zero cross-block mixing) with the small-`H` `nblocks` safety default. This is
+  what the `"monarch"` kind used to build before the naming inversion below.
+- Full-rank regression guard
+  `tests/monarch/test_monarch_linear.py::test_composed_weight_reaches_full_rank`
+  — asserts the composed dense-equivalent of a non-square `MonarchLinear`
+  (400->1200, nblocks=4) reaches full rank `min(in, out) == 400`, locking out
+  the intermediate-width rank bottleneck (a rank near `nblocks**2 == 16`
+  indicates regression).
 - `tests/monarch/test_blockdiag_butterfly_multiply.py::test_fast_matches_true_dense_ground_truth`
   — the fast `BlockdiagButterflyMultiply` autograd Function previously had no
   dedicated correctness test (only the slow reference implementation was
@@ -29,6 +36,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   op against a true dense ground truth (explicit `torch.block_diag` +
   explicit permutation matrices, independent of the implementation's own
   `einops.rearrange` logic) for a non-square, non-power-of-2 shape.
+
+### Changed
+
+- **BREAKING — `torch_structured/factory.py` naming inversion.** The
+  `"monarch"` kind now builds the genuine two-factor `MonarchLinear`
+  (block-diagonal x permutation x block-diagonal, full cross-channel mixing by
+  construction). It previously built the single block-diagonal factor
+  `BlockdiagLinear`, which is now the new `"blockdiag"` kind. Code that relied
+  on `make_linear("monarch", ...)` returning a single-factor block-diagonal
+  layer must switch to `make_linear("blockdiag", ...)`. `_SUPPORTED` is now
+  `("dense", "butterfly", "monarch", "blockdiag", "circulant")`.
+
+### Fixed
+
+- **`MonarchLinear` rank bottleneck.** The two intermediate block dims are now
+  `q = r = in_blksz` (were `nblocks`), so the intermediate width
+  `k*q == nblocks * in_blksz == in_features_extended`. Previously the width was
+  capped at `nblocks**2` (a fixed 16 for `nblocks=4`) regardless of feature
+  sizes, upper-bounding the composed dense-equivalent rank at `nblocks**2`. For
+  a 400->1200 layer with `nblocks=4` the composed rank goes from 16 to the full
+  400, the parameter count from 6400 to 160000, and the compression `saving`
+  from 0.013 to 0.333. The variance-matched init is unchanged and still exact
+  (`nblocks * in_blksz == in_features_extended` still holds).
+
+### Removed
+
+- **`"monarch2"` factory kind.** Its role (the genuine two-factor Monarch) has
+  been folded into the now-correct `"monarch"` kind. `make_linear("monarch2",
+  ...)` now raises `ValueError`.
 
 ## [1.2.5] - 2026-07-09
 

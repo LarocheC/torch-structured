@@ -9,6 +9,7 @@ from torch_structured.factory import (  # noqa: F401
     make_linear,
     _ButterflyLinear,
     _MonarchLinear,
+    _BlockdiagLinear,
     _CirculantLinear,
     _is_pow2,
     _SUPPORTED,
