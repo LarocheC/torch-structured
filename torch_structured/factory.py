@@ -4,6 +4,11 @@ Supported kinds:
     - "dense"     : torch.nn.Linear
     - "butterfly" : torch_structured.Butterfly (signature normalized to (x) -> y)
     - "monarch"   : torch_structured.monarch.blockdiag_linear.BlockdiagLinear
+                    (single block-diagonal factor -- no permutation, zero
+                    cross-block mixing by construction)
+    - "monarch2"  : torch_structured.monarch.monarch_linear.MonarchLinear
+                    (genuine two-factor Monarch: block-diagonal x permutation
+                    x block-diagonal, full cross-channel mixing by construction)
     - "circulant" : custom rfft-based circulant; requires square power-of-2 size
 
 Unknown kinds raise ValueError; "ldr"/"fastfood" raise NotImplementedError to
@@ -21,6 +26,7 @@ from torch import nn
 
 from torch_structured import Butterfly
 from torch_structured.monarch.blockdiag_linear import BlockdiagLinear
+from torch_structured.monarch.monarch_linear import MonarchLinear
 
 
 def _is_pow2(n: int) -> bool:
@@ -95,7 +101,22 @@ class _MonarchLinear(nn.Module):
         return self.bd(x)
 
 
-_SUPPORTED = ("dense", "butterfly", "monarch", "circulant")
+class _MonarchTwoFactorLinear(nn.Module):
+    """Wrap MonarchLinear with the same small-H nblocks safety default as
+    _MonarchLinear above.
+    """
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, **kwargs):
+        super().__init__()
+        if "nblocks" not in kwargs:
+            kwargs["nblocks"] = min(4, in_features, out_features)
+        self.m = MonarchLinear(in_features, out_features, bias=bias, **kwargs)
+
+    def forward(self, x):
+        return self.m(x)
+
+
+_SUPPORTED = ("dense", "butterfly", "monarch", "monarch2", "circulant")
 _NOT_WIRED = ("ldr", "fastfood")
 
 
@@ -110,10 +131,10 @@ def make_linear(
     """Build an (x) -> y linear-like nn.Module of the requested kind.
 
     Parameters:
-        kind: one of {"dense", "butterfly", "monarch", "circulant"}.
+        kind: one of {"dense", "butterfly", "monarch", "monarch2", "circulant"}.
         in_features, out_features: standard nn.Linear sizes.
         bias: include additive bias (keyword-only).
-        **kwargs: forwarded to the underlying constructor (e.g. nblocks for monarch).
+        **kwargs: forwarded to the underlying constructor (e.g. nblocks for monarch/monarch2).
 
     Returns:
         nn.Module with forward(x) -> y of shape (..., out_features).
@@ -124,6 +145,8 @@ def make_linear(
         return _ButterflyLinear(in_features, out_features, bias=bias)
     if kind == "monarch":
         return _MonarchLinear(in_features, out_features, bias=bias, **kwargs)
+    if kind == "monarch2":
+        return _MonarchTwoFactorLinear(in_features, out_features, bias=bias, **kwargs)
     if kind == "circulant":
         return _CirculantLinear(in_features, out_features, bias=bias)
     if kind in _NOT_WIRED:

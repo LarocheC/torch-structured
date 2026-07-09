@@ -16,6 +16,7 @@ def test_import_monarch():
         blockdiag_butterfly_multiply_reference,
     )  # noqa: F401
     from torch_structured.monarch.blockdiag_linear import BlockdiagLinear  # noqa: F401
+    from torch_structured.monarch.monarch_linear import MonarchLinear  # noqa: F401
     from torch_structured.monarch.butterfly_factor import butterfly_factor_to_matrix  # noqa: F401
     from torch_structured.monarch.low_rank import low_rank_project  # noqa: F401
     from torch_structured.monarch.structured_linear import StructuredLinear  # noqa: F401

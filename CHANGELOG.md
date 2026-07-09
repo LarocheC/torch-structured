@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MonarchLinear` (`torch_structured/monarch/monarch_linear.py`): a genuine
+  two-factor Monarch linear layer (block-diagonal x permutation x
+  block-diagonal, per Dao et al. ICML 2022), built on the existing
+  `blockdiag_butterfly_multiply` primitive. Gives full cross-channel mixing
+  by construction, unlike the existing single-factor `"monarch"` kind
+  (`BlockdiagLinear`), which has zero cross-block information flow. Uses a
+  variance-matched two-factor init (naively Kaiming-initializing each factor
+  independently undershoots the correct composed output variance by ~3600x
+  for a 400->1200 shape — regression-guarded by
+  `tests/monarch/test_monarch_linear.py::test_variance_matched_init_regression_guard`).
+- New `"monarch2"` kind in `torch_structured/factory.py::make_linear`, wrapping
+  `MonarchLinear` with the same small-`H` `nblocks` safety default as the
+  existing `"monarch"` kind.
+- `tests/monarch/test_blockdiag_butterfly_multiply.py::test_fast_matches_true_dense_ground_truth`
+  — the fast `BlockdiagButterflyMultiply` autograd Function previously had no
+  dedicated correctness test (only the slow reference implementation was
+  tested, and only shape-checked for non-square cases). This checks the fast
+  op against a true dense ground truth (explicit `torch.block_diag` +
+  explicit permutation matrices, independent of the implementation's own
+  `einops.rearrange` logic) for a non-square, non-power-of-2 shape.
+
 ## [1.2.5] - 2026-07-09
 
 ### Fixed
